@@ -162,7 +162,9 @@ def copy_to_local_models(
 def with_local_datasets(
     datasets: Mapping[Tag, Dataset],
     num_local_datasets: int,
-    local_dataset_indices: Optional[Sequence[TensorType]] = None,
+    local_dataset_indices: Optional[
+        Sequence[TensorType] | Mapping[Tag, Sequence[TensorType]]
+    ] = None,
 ) -> Dict[Tag, Dataset]:
     """
     Helper method to add local datasets if they do not already exist, by copying global datasets
@@ -174,17 +176,22 @@ def with_local_datasets(
         the global datasets should be copied. If None then the entire datasets are copied.
     :return: The updated mapping of datasets.
     """
-    if local_dataset_indices is not None and len(local_dataset_indices) != num_local_datasets:
-        raise ValueError(
-            f"local_dataset_indices should have {num_local_datasets} entries, "
-            f"has {len(local_dataset_indices)}"
-        )
+    if isinstance(local_dataset_indices, Sequence):
+        local_dataset_indices = {tag: local_dataset_indices for tag in datasets}
 
     updated_datasets = {}
     for tag in datasets:
         updated_datasets[tag] = datasets[tag]
         ltag = LocalizedTag.from_tag(tag)
         if not ltag.is_local:
+            if local_dataset_indices is not None:
+                if tag not in local_dataset_indices:
+                    raise ValueError(f"local_dataset_indices missing tag {tag}")
+                elif len(local_dataset_indices[tag]) != num_local_datasets:
+                    raise ValueError(
+                        f"local_dataset_indices for tag {tag} should have {num_local_datasets} "
+                        f"entries, but has {len(local_dataset_indices[tag])}"
+                    )
             for i in range(num_local_datasets):
                 target_ltag = LocalizedTag(ltag.global_tag, i)
                 if target_ltag not in datasets:
@@ -194,10 +201,10 @@ def with_local_datasets(
                         # TODO: use sparse tensors instead
                         updated_datasets[target_ltag] = Dataset(
                             query_points=tf.gather(
-                                datasets[tag].query_points, local_dataset_indices[i]
+                                datasets[tag].query_points, local_dataset_indices[tag][i]
                             ),
                             observations=tf.gather(
-                                datasets[tag].observations, local_dataset_indices[i]
+                                datasets[tag].observations, local_dataset_indices[tag][i]
                             ),
                         )
 

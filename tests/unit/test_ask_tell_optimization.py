@@ -189,7 +189,7 @@ def test_ask_tell_optimizer_returns_complete_state(
     assert_datasets_allclose(state.record.dataset, init_dataset)
     assert isinstance(state.record.model, type(model))
     assert state.record.acquisition_state is None
-    assert state.local_data_ixs is not None
+    assert isinstance(state.local_data_ixs, Sequence)
     assert state.local_data_len == 2
     npt.assert_array_equal(
         state.local_data_ixs,
@@ -229,8 +229,8 @@ def test_ask_tell_optimizer_loads_from_state(
 
     assert_datasets_allclose(new_state.record.dataset, old_state.record.dataset)
     assert old_state.record.model is new_state.record.model
-    assert new_state.local_data_ixs is not None
-    assert old_state.local_data_ixs is not None
+    assert isinstance(new_state.local_data_ixs, Sequence)
+    assert isinstance(old_state.local_data_ixs, Sequence)
     npt.assert_array_equal(new_state.local_data_ixs, old_state.local_data_ixs)
     assert old_state.local_data_len == new_state.local_data_len == len(init_dataset.query_points)
 
@@ -948,15 +948,13 @@ def test_ask_tell_optimizer_dataset_len_variables(
     assert AskTellOptimizer.dataset_len({"tag1": dataset, "tag2": dataset}) == 2
 
 
-def test_ask_tell_optimizer_dataset_len_raises_on_inconsistently_sized_datasets(
+def test_ask_tell_optimizer_dataset_len_returns_dict_on_inconsistently_sized_datasets(
     init_dataset: Dataset,
 ) -> None:
-    with pytest.raises(ValueError):
-        AskTellOptimizer.dataset_len(
-            {"tag": init_dataset, "empty": Dataset(tf.zeros([0, 2]), tf.zeros([0, 2]))}
-        )
-    with pytest.raises(ValueError):
-        AskTellOptimizer.dataset_len({})
+    assert AskTellOptimizer.dataset_len(
+        {"tag": init_dataset, "empty": Dataset(tf.zeros([0, 2]), tf.zeros([0, 2]))}
+    ) == {"tag": 2, "empty": 0}
+    assert AskTellOptimizer.dataset_len({}) == {}
 
 
 @pytest.mark.parametrize("optimizer", OPTIMIZERS)
