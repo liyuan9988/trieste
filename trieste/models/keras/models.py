@@ -403,6 +403,9 @@ class DeepEnsemble(
             fit_args["epochs"] = fit_args["epochs"] + self._absolute_epochs
 
         x, y = self.prepare_dataset(dataset)
+        for _x in x.values():
+            print(f"len _x = {len(_x)}")
+
         tf_dataset = tf.data.Dataset.from_tensor_slices((x, y)).repeat()
         history = self.model.fit(
             tf_dataset,
