@@ -840,3 +840,37 @@ def test_deep_ensemble_prepare_tf_data_shapes_and_types(num_outputs: int, input_
         for key in batch_y:
             assert batch_y[key].shape[-1] == num_outputs
             assert batch_y[key].dtype == example_data.observations.dtype
+
+
+def test_deep_ensemble_prepare_tf_data_validation_split() -> None:
+    example_data = _get_example_data([100, 1])
+    model, _, _ = trieste_deep_ensemble_model(example_data, _ENSEMBLE_SIZE, False, False)
+
+    x, y = model.prepare_dataset(example_data)
+    validation_split = 0.2
+    train_dataset, val_dataset = model.prepare_tf_data(
+        x, y, batch_size=10, num_points=100, validation_split=validation_split
+    )
+
+    # Check that we get two datasets
+    assert isinstance(train_dataset, tf.data.Dataset)
+    assert isinstance(val_dataset, tf.data.Dataset)
+
+    # Check approximate sizes (might be off by 1 due to rounding)
+    train_size = sum(1 for _ in train_dataset)
+    val_size = sum(1 for _ in val_dataset)
+    assert abs(train_size * 10 - 80) <= 1  # 80% of 100 = 80 samples
+    assert abs(val_size * 10 - 20) <= 1  # 20% of 100 = 20 samples
+
+
+def test_deep_ensemble_prepare_tf_data_invalid_validation_split() -> None:
+    example_data = _get_example_data([100, 1])
+    model, _, _ = trieste_deep_ensemble_model(example_data, _ENSEMBLE_SIZE, False, False)
+
+    x, y = model.prepare_dataset(example_data)
+
+    with pytest.raises(ValueError):
+        model.prepare_tf_data(x, y, batch_size=10, num_points=100, validation_split=1.0)
+
+    with pytest.raises(ValueError):
+        model.prepare_tf_data(x, y, batch_size=10, num_points=100, validation_split=-0.1)
