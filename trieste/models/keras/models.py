@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import copy
 import re
 from typing import Any, Dict, Mapping, Optional
 
@@ -377,6 +378,26 @@ class DeepEnsemble(
         """
         return
 
+    def prepare_tf_data(
+        self, x: Dict[str, TensorType], y: Dict[str, TensorType], batch_size: int, num_points: int
+    ) -> tf.data.Dataset:
+        """
+        Prepare data for optimization as a `tf.data.Dataset`. This method allows user a more control
+        over the data pipeline, e.g. shuffling, batching, prefetching, repeating,etc.
+
+        :param x: The input data.
+        :param y: The output data.
+        :param batch_size: The batch size.
+        :param num_points: The number of points.
+        :return: The prepared data.
+        """
+        return (
+            tf.data.Dataset.from_tensor_slices((x, y))
+            .prefetch(tf.data.experimental.AUTOTUNE)
+            .shuffle(num_points)
+            .batch(batch_size, drop_remainder=True)
+        )
+
     def optimize_encoded(self, dataset: Dataset) -> tf_keras.callbacks.History:
         """
         Optimize the underlying Keras ensemble model with the specified ``dataset``.
@@ -393,20 +414,24 @@ class DeepEnsemble(
 
         :param dataset: The data with which to optimize the model.
         """
-        fit_args = dict(self.optimizer.fit_args)
+        fit_args_copy = copy.deepcopy(dict(self.optimizer.fit_args))
 
         # Tell optimizer how many epochs have been used before: the optimizer will "continue"
         # optimization across multiple BO iterations rather than start fresh at each iteration.
         # This allows us to monitor training across iterations.
 
-        if "epochs" in fit_args:
-            fit_args["epochs"] = fit_args["epochs"] + self._absolute_epochs
+        if "epochs" in fit_args_copy:
+            fit_args_copy["epochs"] = fit_args_copy["epochs"] + self._absolute_epochs
 
         x, y = self.prepare_dataset(dataset)
+        tf_data = self.prepare_tf_data(
+            x, y, fit_args_copy["batch_size"], dataset.observations.shape[0]
+        )
+        fit_args_copy["batch_size"] = None  # batching is done in prepare_tf_data
+
         history = self.model.fit(
-            x=x,
-            y=y,
-            **fit_args,
+            tf_data,
+            **fit_args_copy,
             initial_epoch=self._absolute_epochs,
         )
         if self._continuous_optimisation:
