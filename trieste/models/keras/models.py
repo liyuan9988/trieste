@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import copy
 import re
-from typing import Any, Dict, Mapping, Optional
+from typing import Any, Dict, Mapping, Optional, Union
 
 import dill
 import tensorflow as tf
@@ -379,24 +379,60 @@ class DeepEnsemble(
         return
 
     def prepare_tf_data(
-        self, x: Dict[str, TensorType], y: Dict[str, TensorType], batch_size: int, num_points: int
-    ) -> tf.data.Dataset:
+        self,
+        x: dict[str, TensorType],
+        y: dict[str, TensorType],
+        batch_size: int,
+        num_points: int,
+        validation_split: float = 0.0,
+    ) -> Union[tf.data.Dataset, tuple[tf.data.Dataset, tf.data.Dataset]]:
         """
         Prepare data for optimization as a `tf.data.Dataset`. This method allows user a more control
         over the data pipeline, e.g. shuffling, batching, prefetching, repeating,etc.
 
-        :param x: The input data.
-        :param y: The output data.
-        :param batch_size: The batch size.
-        :param num_points: The number of points.
-        :return: The prepared data.
+        :param x: Dictionary of input tensors
+        :param y: Dictionary of output tensors
+        :param batch_size: Batch size for the dataset
+        :param num_points: Number of data points
+        :param validation_split: Float between 0 and 1, fraction of data to use for validation
+        :return: If validation_split is 0, returns a single dataset for training.
+                If validation_split > 0, returns a tuple of (training_dataset, validation_dataset)
         """
-        return (
-            tf.data.Dataset.from_tensor_slices((x, y))
-            .prefetch(tf.data.experimental.AUTOTUNE)
-            .shuffle(num_points)
-            .batch(batch_size, drop_remainder=True)
-        )
+        if not 0.0 <= validation_split < 1.0:
+            raise ValueError("validation_split must be between 0 and 1")
+
+        dataset = tf.data.Dataset.from_tensor_slices((x, y))
+
+        if validation_split > 0:
+            # Calculate split sizes
+            val_size = int(num_points * validation_split)
+            train_size = num_points - val_size
+
+            # Shuffle before splitting to ensure randomness
+            dataset = dataset.shuffle(num_points, reshuffle_each_iteration=True)
+
+            # Split into train and validation
+            train_dataset = dataset.take(train_size)
+            val_dataset = dataset.skip(train_size)
+
+            # Prepare training dataset
+            train_dataset = (
+                train_dataset.prefetch(tf.data.AUTOTUNE)
+                .shuffle(train_size, reshuffle_each_iteration=True)
+                .batch(batch_size, drop_remainder=True)
+            )
+
+            # Prepare validation dataset
+            val_dataset = val_dataset.prefetch(tf.data.AUTOTUNE)
+
+            return train_dataset, val_dataset
+        else:
+            # Original behavior when no validation split is requested
+            return (
+                dataset.prefetch(tf.data.AUTOTUNE)
+                .shuffle(train_size, reshuffle_each_iteration=True)
+                .batch(batch_size, drop_remainder=True)
+            )
 
     def optimize_encoded(self, dataset: Dataset) -> tf_keras.callbacks.History:
         """
@@ -419,15 +455,29 @@ class DeepEnsemble(
         # Tell optimizer how many epochs have been used before: the optimizer will "continue"
         # optimization across multiple BO iterations rather than start fresh at each iteration.
         # This allows us to monitor training across iterations.
-
         if "epochs" in fit_args_copy:
             fit_args_copy["epochs"] = fit_args_copy["epochs"] + self._absolute_epochs
 
         x, y = self.prepare_dataset(dataset)
+
+        validation_split = fit_args_copy.pop("validation_split", 0.0)
         tf_data = self.prepare_tf_data(
-            x, y, fit_args_copy["batch_size"], dataset.observations.shape[0]
+            x,
+            y,
+            batch_size=fit_args_copy["batch_size"],
+            num_points=dataset.observations.shape[0],
+            validation_split=validation_split,
         )
         fit_args_copy["batch_size"] = None  # batching is done in prepare_tf_data
+
+        if validation_split > 0:
+            train_dataset, val_dataset = tf_data
+            fit_args_copy["validation_data"] = val_dataset
+            history = self.model.fit(
+                train_dataset, **fit_args_copy, initial_epoch=self._absolute_epochs
+            )
+        else:
+            history = self.model.fit(tf_data, **fit_args_copy, initial_epoch=self._absolute_epochs)
 
         history = self.model.fit(
             tf_data,
