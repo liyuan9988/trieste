@@ -560,7 +560,7 @@ def test_deep_ensemble_prepare_data_call(
 
 
 def test_deep_ensemble_deep_copyable() -> None:
-    example_data = _get_example_data([10, 3], [10, 3])
+    example_data = _get_example_data([160, 3], [160, 3])
     model, _, _ = trieste_deep_ensemble_model(example_data, 2, False, False)
     model_copy = copy.deepcopy(model)
 
@@ -570,7 +570,7 @@ def test_deep_ensemble_deep_copyable() -> None:
     npt.assert_allclose(variance_f, variance_f_copy)
 
     # check that updating the original doesn't break or change the deepcopy
-    new_example_data = _get_example_data([20, 3], [20, 3])
+    new_example_data = _get_example_data([320, 3], [320, 3])
     model.update(new_example_data)
     model.optimize(new_example_data)
 
@@ -582,7 +582,7 @@ def test_deep_ensemble_deep_copyable() -> None:
     npt.assert_array_compare(operator.__ne__, variance_f_updated, variance_f)
 
     # check that we can also update the copy
-    newer_example_data = _get_example_data([30, 3], [30, 3])
+    newer_example_data = _get_example_data([640, 3], [640, 3])
     model_copy.update(newer_example_data)
     model_copy.optimize(newer_example_data)
 
@@ -595,7 +595,7 @@ def test_deep_ensemble_deep_copyable() -> None:
 
 
 def test_deep_ensemble_tf_saved_model() -> None:
-    example_data = _get_example_data([10, 3], [10, 3])
+    example_data = _get_example_data([16, 3], [16, 3])
     model, _, _ = trieste_deep_ensemble_model(example_data, 2, False, False)
 
     with tempfile.TemporaryDirectory() as path:
@@ -638,9 +638,9 @@ def test_deep_ensemble_tf_saved_model() -> None:
 
 
 def test_deep_ensemble_deep_copies_optimizer_state() -> None:
-    example_data = _get_example_data([10, 3], [10, 3])
+    example_data = _get_example_data([100, 3], [100, 3])
     model, _, _ = trieste_deep_ensemble_model(example_data, 2, False, False)
-    new_example_data = _get_example_data([20, 3], [20, 3])
+    new_example_data = _get_example_data([120, 3], [120, 3])
     model.update(new_example_data)
     assert not keras_optimizer_weights(model.model.optimizer)
     model.optimize(new_example_data)
@@ -681,11 +681,11 @@ def test_deep_ensemble_deep_copies_optimizer_state() -> None:
     ],
 )
 def test_deep_ensemble_deep_copies_different_callback_types(callbacks: list[Callback]) -> None:
-    example_data = _get_example_data([10, 3], [10, 3])
+    example_data = _get_example_data([160, 3], [160, 3])
     model, _, _ = trieste_deep_ensemble_model(example_data, 2, False, False)
     model.optimizer.fit_args["callbacks"] = callbacks
 
-    new_example_data = _get_example_data([20, 3], [20, 3])
+    new_example_data = _get_example_data([320, 3], [320, 3])
     model.update(new_example_data)
     model.optimize(new_example_data)
 
@@ -697,7 +697,7 @@ def test_deep_ensemble_deep_copies_different_callback_types(callbacks: list[Call
 
 
 def test_deep_ensemble_deep_copies_optimizer_callback_models() -> None:
-    example_data = _get_example_data([10, 3], [10, 3])
+    example_data = _get_example_data([16, 3], [16, 3])
     keras_ensemble = trieste_keras_ensemble_model(example_data, _ENSEMBLE_SIZE, False)
     model = DeepEnsemble(keras_ensemble)
     new_example_data = _get_example_data([20, 3], [20, 3])
@@ -716,7 +716,7 @@ def test_deep_ensemble_deep_copies_optimizer_callback_models() -> None:
 
 
 def test_deep_ensemble_deep_copies_optimizer_without_callbacks() -> None:
-    example_data = _get_example_data([10, 3], [10, 3])
+    example_data = _get_example_data([16, 3], [16, 3])
     keras_ensemble = trieste_keras_ensemble_model(example_data, _ENSEMBLE_SIZE, False)
     model = DeepEnsemble(keras_ensemble)
     del model.optimizer.fit_args["callbacks"]
@@ -727,7 +727,7 @@ def test_deep_ensemble_deep_copies_optimizer_without_callbacks() -> None:
 
 
 def test_deep_ensemble_deep_copies_optimization_history() -> None:
-    example_data = _get_example_data([10, 3], [10, 3])
+    example_data = _get_example_data([16, 3], [16, 3])
     keras_ensemble = trieste_keras_ensemble_model(example_data, _ENSEMBLE_SIZE, False)
     model = DeepEnsemble(keras_ensemble)
     model.optimize(example_data)
@@ -752,7 +752,7 @@ def test_deep_ensemble_log(
     mocked_summary_histogram: unittest.mock.MagicMock,
     use_dataset: bool,
 ) -> None:
-    example_data = _get_example_data([10, 3], [10, 3])
+    example_data = _get_example_data([16, 3], [16, 3])
     keras_ensemble = trieste_keras_ensemble_model(example_data, _ENSEMBLE_SIZE, False)
     model = DeepEnsemble(keras_ensemble)
     model.optimize(example_data)
@@ -777,3 +777,66 @@ def test_deep_ensemble_log(
 
     assert mocked_summary_scalar.call_count == num_scalars
     assert mocked_summary_histogram.call_count == num_histogram
+
+
+def test_deep_ensemble_prepare_tf_data_returns_dataset() -> None:
+    example_data = _get_example_data([100, 1])
+    model, _, _ = trieste_deep_ensemble_model(example_data, _ENSEMBLE_SIZE, False, False)
+
+    x, y = model.prepare_dataset(example_data)
+    dataset = model.prepare_tf_data(x, y, batch_size=10, num_points=100)
+
+    assert isinstance(dataset, tf.data.Dataset)
+
+
+def test_deep_ensemble_prepare_tf_data_batch_size() -> None:
+    example_data = _get_example_data([100, 1])
+    model, _, _ = trieste_deep_ensemble_model(example_data, _ENSEMBLE_SIZE, False, False)
+
+    x, y = model.prepare_dataset(example_data)
+    batch_size = 10
+    dataset = model.prepare_tf_data(x, y, batch_size=batch_size, num_points=100)
+
+    for batch_x, batch_y in dataset:
+        for key in batch_x:
+            assert batch_x[key].shape[0] == batch_size
+        for key in batch_y:
+            assert batch_y[key].shape[0] == batch_size
+
+
+@random_seed
+def test_deep_ensemble_prepare_tf_data_shuffling() -> None:
+    example_data = _get_example_data([100, 1])
+    model, _, _ = trieste_deep_ensemble_model(example_data, _ENSEMBLE_SIZE, False, False)
+
+    x, y = model.prepare_dataset(example_data)
+    dataset = model.prepare_tf_data(x, y, batch_size=10, num_points=100)
+
+    # Get first batch from two iterations
+    first_iter = next(iter(dataset))
+    second_iter = next(iter(dataset))
+
+    # Check that the batches are different (shuffled)
+    for key in first_iter[0]:
+        assert not tf.reduce_all(first_iter[0][key] == second_iter[0][key])
+
+
+@pytest.mark.parametrize("input_dim", [1, 3, 5])
+def test_deep_ensemble_prepare_tf_data_shapes_and_types(num_outputs: int, input_dim: int) -> None:
+    example_data = _get_example_data([100, input_dim], [100, num_outputs])
+    model, _, _ = trieste_deep_ensemble_model(example_data, _ENSEMBLE_SIZE, False, False)
+
+    x, y = model.prepare_dataset(example_data)
+    dataset = model.prepare_tf_data(x, y, batch_size=10, num_points=100)
+
+    # Check shapes and types of the dataset elements
+    for batch_x, batch_y in dataset:
+        # Check input shapes and types
+        for key in batch_x:
+            assert batch_x[key].shape[-1] == input_dim
+            assert batch_x[key].dtype == example_data.query_points.dtype
+
+        # Check output shapes and types
+        for key in batch_y:
+            assert batch_y[key].shape[-1] == num_outputs
+            assert batch_y[key].dtype == example_data.observations.dtype
