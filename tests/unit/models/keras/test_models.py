@@ -802,7 +802,7 @@ def test_deep_ensemble_parallel_training_performance() -> None:
     We allow some overhead, but should be significantly less than 2x
     """
     # Create a larger dataset to better measure performance
-    example_data = _get_example_data([1000, 1])
+    example_data = _get_example_data([200000, 1])
 
     # Test with different ensemble sizes
     ensemble_sizes = [5, 10]
