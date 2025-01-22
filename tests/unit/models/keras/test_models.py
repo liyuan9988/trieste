@@ -42,6 +42,7 @@ from trieste.models.keras import (
     negative_log_likelihood,
     sample_with_replacement,
 )
+from trieste.models.keras.builders import build_keras_ensemble
 from trieste.models.optimizer import KerasOptimizer, TrainingData
 from trieste.models.utils import (
     get_last_optimization_result,
@@ -808,14 +809,26 @@ def test_deep_ensemble_parallel_training_performance() -> None:
     training_times = []
 
     for size in ensemble_sizes:
-        model, _, _ = trieste_deep_ensemble_model(example_data, size, True, False)
+        keras_ensemble = build_keras_ensemble(example_data, size, 3, 500)
+        optimizer = tf_keras.optimizers.Adam()
+        fit_args = {
+            "batch_size": 128,
+            "epochs": 1,
+            "callbacks": [],
+            "verbose": 1,
+        }
+        optimizer_wrapper = KerasOptimizer(optimizer, fit_args)
+        model = DeepEnsemble(
+            keras_ensemble, optimizer_wrapper, True
+        )
         
         # Time the training
         start_time = tf.timestamp()
         model.optimize(example_data)
         end_time = tf.timestamp()
         training_times.append(end_time - start_time)
-
+    
+    print(training_times)
     assert training_times[1] / training_times[0] < 1.5, (
         f"Training time ratio {training_times[1] / training_times[0]} suggests "
         f"training may not be parallel"
