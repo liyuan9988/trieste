@@ -812,14 +812,17 @@ def test_deep_ensemble_parallel_training_performance() -> None:
         keras_ensemble = build_keras_ensemble(example_data, size, 3, 500)
         optimizer = tf_keras.optimizers.Adam()
         fit_args = {
-            "batch_size": 128,
+            "batch_size": 1024,  # Larger batch size for better parallelization
             "epochs": 1,
             "callbacks": [],
             "verbose": 1,
         }
         optimizer_wrapper = KerasOptimizer(optimizer, fit_args)
         model = DeepEnsemble(
-            keras_ensemble, optimizer_wrapper, True
+            keras_ensemble, 
+            optimizer_wrapper, 
+            True,
+            compile_args={"jit_compile": True}  # Enable XLA compilation
         )
         
         # Time the training
