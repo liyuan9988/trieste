@@ -538,25 +538,40 @@ def test_deep_ensemble_prepare_data_call(
     model, _, _ = trieste_deep_ensemble_model(example_data, ensemble_size, bootstrap_data, False)
 
     # call with whole dataset
-    data = model.prepare_dataset(example_data)
-    assert isinstance(data, tuple)
-    for ensemble_data in data:
-        assert isinstance(ensemble_data, dict)
-        assert len(ensemble_data.keys()) == ensemble_size
-        for member_data in ensemble_data:
-            if bootstrap_data:
-                assert tf.reduce_any(ensemble_data[member_data] != x)
-            else:
-                assert tf.reduce_all(ensemble_data[member_data] == x)
-    for inp, out in zip(data[0], data[1]):
-        assert "".join(filter(str.isdigit, inp)) == "".join(filter(str.isdigit, out))
+    inputs, outputs = model.prepare_dataset(example_data)
+    
+    # Check input shape and structure
+    assert isinstance(inputs, tf.Tensor)
+    assert inputs.shape[0] == ensemble_size  # First dimension is ensemble size
+    assert inputs.shape[1:] == x.shape  # Rest of dimensions match original data
+    
+    # Check outputs structure
+    assert isinstance(outputs, list)
+    assert len(outputs) == ensemble_size
+    
+    # Check bootstrapping behavior
+    for i in range(ensemble_size):
+        if bootstrap_data:
+            # Both inputs and outputs should be different from original data
+            assert tf.reduce_any(inputs[i] != x)
+            assert tf.reduce_any(outputs[i] != y)
+            # But inputs and outputs should be aligned (same indices used)
+            input_indices = tf.argsort(inputs[i, :, 0])
+            output_indices = tf.argsort(outputs[i][:, 0])
+            tf.assert_equal(input_indices, output_indices)
+        else:
+            # Without bootstrapping, data should be identical
+            tf.assert_equal(inputs[i], x)
+            tf.assert_equal(outputs[i], y)
 
-    # call with query points alone
-    inputs = model.prepare_query_points(example_data.query_points)
-    assert isinstance(inputs, dict)
-    assert len(inputs.keys()) == ensemble_size
-    for member_data in inputs:
-        assert tf.reduce_all(inputs[member_data] == x)
+    # Test prepare_query_points
+    query_points = tf.random.uniform([10, 1])
+    prepared_points = model.prepare_query_points(query_points)
+    assert prepared_points.shape[0] == ensemble_size
+    assert prepared_points.shape[1:] == query_points.shape
+    # All ensemble members should get the same query points for prediction
+    for i in range(ensemble_size):
+        tf.assert_equal(prepared_points[i], query_points)
 
 
 def test_deep_ensemble_deep_copyable() -> None:
@@ -777,3 +792,31 @@ def test_deep_ensemble_log(
 
     assert mocked_summary_scalar.call_count == num_scalars
     assert mocked_summary_histogram.call_count == num_histogram
+
+
+@random_seed
+def test_deep_ensemble_parallel_training_performance() -> None:
+    """
+    Verify that doubling ensemble size doesn't double training time, as a test of parallel training.
+    We allow some overhead, but should be significantly less than 2x
+    """
+    # Create a larger dataset to better measure performance
+    example_data = _get_example_data([1000, 1])
+
+    # Test with different ensemble sizes
+    ensemble_sizes = [5, 10]
+    training_times = []
+
+    for size in ensemble_sizes:
+        model, _, _ = trieste_deep_ensemble_model(example_data, size, True, False)
+        
+        # Time the training
+        start_time = tf.timestamp()
+        model.optimize(example_data)
+        end_time = tf.timestamp()
+        training_times.append(end_time - start_time)
+
+    assert training_times[1] / training_times[0] < 1.5, (
+        f"Training time ratio {training_times[1] / training_times[0]} suggests "
+        f"training may not be parallel"
+    )

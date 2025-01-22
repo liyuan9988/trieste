@@ -15,7 +15,7 @@
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, Mapping, Optional
+from typing import Any, Dict, Mapping, Optional, List
 
 import dill
 import tensorflow as tf
@@ -200,9 +200,9 @@ class DeepEnsemble(
 
     def prepare_dataset(
         self, dataset: Dataset
-    ) -> tuple[Dict[str, TensorType], Dict[str, TensorType]]:
+    ) -> tuple[TensorType, List[TensorType]]:
         """
-        Transform ``dataset`` into inputs and outputs with correct names that can be used for
+        Transform ``dataset`` into inputs and outputs that can be used for
         training the :class:`KerasEnsemble` model.
 
         If ``bootstrap`` argument in the :class:`~trieste.models.keras.DeepEnsemble` is set to
@@ -210,34 +210,45 @@ class DeepEnsemble(
         each network in the ensemble.
 
         :param dataset: A dataset with ``query_points`` and ``observations`` tensors.
-        :return: A dictionary with input data and a dictionary with output data.
+        :return: A tuple of input tensor with shape [n_rows, input_dim, ensemble_size] and
+                a list of output tensors each with shape [n_rows, output_dim].
         """
-        inputs = {}
-        outputs = {}
+        query_points, observations = dataset.astuple()
+        n_rows = dataset.observations.shape[0]
+
+        # Create inputs and outputs for all ensemble members
+        inputs_list = []
+        outputs = []
+        
         for index in range(self.ensemble_size):
             if self._bootstrap:
-                resampled_data = sample_with_replacement(dataset)
+                # For bootstrapping, sample indices for each network
+                indices = tf.random.uniform((n_rows,), maxval=n_rows, dtype=tf.dtypes.int32)
+                network_inputs = tf.gather(query_points, indices, axis=0)
+                network_outputs = tf.gather(observations, indices, axis=0)
             else:
-                resampled_data = dataset
-            input_name = self.model.input_names[index]
-            output_name = self.model.output_names[index]
-            inputs[input_name], outputs[output_name] = resampled_data.astuple()
+                network_inputs = query_points
+                network_outputs = observations
+            
+            inputs_list.append(network_inputs)
+            outputs.append(network_outputs)
+
+        # Stack inputs along the last dimension
+        inputs = tf.transpose(tf.stack(inputs_list), [1, 2, 0])  # [n_rows, input_dim, ensemble_size]
 
         return inputs, outputs
 
-    def prepare_query_points(self, query_points: TensorType) -> Dict[str, TensorType]:
+    def prepare_query_points(self, query_points: TensorType) -> TensorType:
         """
-        Transform ``query_points`` into inputs with correct names that can be used for
-        predicting with the model.
+        Transform ``query_points`` into inputs that can be used for predicting with the model.
+        We stack the query points for each ensemble member along the last dimension.
 
         :param query_points: A tensor with ``query_points``.
-        :return: A dictionary with query_points prepared for predictions.
+        :return: The query points stacked for each ensemble member.
         """
-        inputs = {}
-        for index in range(self.ensemble_size):
-            inputs[self.model.input_names[index]] = query_points
-
-        return inputs
+        # Stack the same query points for each ensemble member along the last dimension
+        stacked = tf.stack([query_points] * self.ensemble_size)  # [ensemble_size, n_rows, input_dim]
+        return tf.transpose(stacked, [1, 2, 0])  # [n_rows, input_dim, ensemble_size]
 
     def ensemble_distributions(self, query_points: TensorType) -> tuple[tfd.Distribution, ...]:
         """
@@ -247,8 +258,18 @@ class DeepEnsemble(
         :return: The distributions for the observations at the specified
             ``query_points`` for each member of the ensemble.
         """
-        x_transformed: dict[str, TensorType] = self.prepare_query_points(query_points)
-        return self._model.model(x_transformed)
+        x_transformed = self.prepare_query_points(query_points)  # [ensemble_size, n_rows, input_dim]
+        outputs = self._model.model(x_transformed)  # List of distributions
+        
+        # Convert outputs to tuple of distributions
+        distributions = []
+        for output in outputs:
+            if isinstance(output, tfd.Distribution):
+                distributions.append(output)
+            else:
+                raise ValueError(f"Expected Distribution output but got {type(output)}")
+        
+        return tuple(distributions)
 
     def predict_encoded(self, query_points: TensorType) -> tuple[TensorType, TensorType]:
         r"""

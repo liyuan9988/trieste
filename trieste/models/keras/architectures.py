@@ -114,14 +114,30 @@ class KerasEnsemble:
     def _build_ensemble(self) -> tf_keras.Model:
         """
         Builds the ensemble model by combining all the individual networks in a single Keras model.
-        This method relies on ``connect_layers`` method of :class:`KerasEnsembleNetwork` objects
-        to construct individual networks.
+        Uses a single input layer with an additional dimension for ensemble members, allowing
+        different data for each network while enabling parallel training.
 
         :return: The Keras model.
         """
-        inputs, outputs = zip(*[network.connect_layers() for network in self._networks])
+        # Create input layer with ensemble dimension as the last dimension
+        input_shape = self._networks[0].input_tensor_spec.shape + (self.ensemble_size,)
+        input_tensor = tf_keras.Input(
+            shape=input_shape,
+            dtype=self._networks[0].input_tensor_spec.dtype,
+            name="ensemble_input",
+            batch_size=None,  # Allow dynamic batch size
+        )
 
-        return tf_keras.Model(inputs=inputs, outputs=outputs)
+        # Connect each network to its slice of the input tensor
+        outputs = []
+        for i, network in enumerate(self._networks):
+            # Extract the input for this network
+            network_input = tf.gather(input_tensor, i, axis=-1)  # Get slice from last dimension
+            output = network.connect_layers(network_input, i)
+            outputs.append(output)
+
+        # Return model with list of outputs
+        return tf_keras.Model(inputs=input_tensor, outputs=outputs)
 
     def __getstate__(self) -> dict[str, Any]:
         # When pickling use to_json to save the model.
@@ -221,13 +237,14 @@ class KerasEnsembleNetwork:
         return int(np.prod(self.output_tensor_spec.shape))
 
     @abstractmethod
-    def connect_layers(self) -> tuple[tf.Tensor, tf.Tensor]:
+    def connect_layers(self, input_tensor: tf.Tensor, ensemble_index: int) -> tf.Tensor:
         """
         Connects the layers of the neural network. Architecture, layers and layer specifications
         need to be defined by the subclasses.
 
-        :return: Input and output tensor of the network, required by :class:`tf.keras.Model` to
-            build a model.
+        :param input_tensor: Input tensor to connect the layers to.
+        :param ensemble_index: Index of this network in the ensemble.
+        :return: Output tensor of the network.
         """
         raise NotImplementedError
 
@@ -302,15 +319,7 @@ class GaussianNetwork(KerasEnsembleNetwork):
         self._hidden_layer_args = hidden_layer_args
         self._independent = independent
 
-    def _gen_input_tensor(self) -> tf_keras.Input:
-        input_tensor = tf_keras.Input(
-            shape=self.input_tensor_spec.shape,
-            dtype=self.input_tensor_spec.dtype,
-            name=self.input_layer_name,
-        )
-        return input_tensor
-
-    def _gen_hidden_layers(self, input_tensor: tf.Tensor) -> tf.Tensor:
+    def _gen_hidden_layers(self, input_tensor: tf.Tensor, ensemble_index: int) -> tf.Tensor:
         for index, hidden_layer_args in enumerate(self._hidden_layer_args):
             layer_name = f"{self.network_name}dense_{index}"
             layer = tf_keras.layers.Dense(
@@ -354,21 +363,21 @@ class GaussianNetwork(KerasEnsembleNetwork):
 
         return distribution
 
-    def connect_layers(self) -> tuple[tf.Tensor, tf.Tensor]:
+    def connect_layers(self, input_tensor: tf.Tensor, ensemble_index: int) -> tf.Tensor:
         """
-        Connect all layers in the network. We start by generating an input tensor based on input
-        tensor specification. Next we generate a sequence of hidden dense layers based on
-        hidden layer arguments. Finally, we generate a dense layer whose nodes act as parameters of
-        a Gaussian distribution in the final probabilistic layer.
+        Connect all layers in the network. We start with the input tensor, generate a sequence 
+        of hidden dense layers based on hidden layer arguments, and finally generate a dense layer 
+        whose nodes act as parameters of a Gaussian distribution in the final probabilistic layer.
 
-        :return: Input and output tensor of the sequence of layers.
+        :param input_tensor: Input tensor to connect the layers to.
+        :param ensemble_index: Index of this network in the ensemble.
+        :return: Output tensor of the sequence of layers.
         """
-        input_tensor = self._gen_input_tensor()
-        hidden_tensor = self._gen_hidden_layers(input_tensor)
+        hidden_tensor = self._gen_hidden_layers(input_tensor, ensemble_index)
 
         if self.flattened_output_shape == 1:
             output_tensor = self._gen_single_output_layer(hidden_tensor)
         else:
             output_tensor = self._gen_multi_output_layer(hidden_tensor)
 
-        return input_tensor, output_tensor
+        return output_tensor
