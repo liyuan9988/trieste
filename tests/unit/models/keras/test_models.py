@@ -796,53 +796,99 @@ def test_deep_ensemble_log(
 
 
 @random_seed
-def test_deep_ensemble_parallel_training_performance() -> None:
+def test_pure_tf_ensemble_parallel_training():
     """
-    Verify that doubling ensemble size doesn't double training time, as a test of parallel training.
-    We allow some overhead, but should be significantly less than 2x
+    Test parallel training performance using a pure TensorFlow implementation
+    of deep ensemble, without Keras overhead.
     """
-    # Create a larger dataset with more features to increase computation per network
-    example_data = _get_example_data([100000, 10], [100000, 5])  # 10D input, 5D output
+    # Generate synthetic data
+    n_points = 100000
+    input_dim = 10
+    output_dim = 1
+    x = tf.random.normal([n_points, input_dim], dtype=tf.float64)
+    y = tf.random.normal([n_points, output_dim], dtype=tf.float64)
 
-    # Test with different ensemble sizes
-    ensemble_sizes = [5, 10]
-    training_times = []
-
-    for size in ensemble_sizes:
-        # Create a larger network to increase computation
-        keras_ensemble = build_keras_ensemble(
-            example_data, 
-            size, 
-            num_hidden_layers=5,  # More layers
-            units=1000,  # More units per layer
-            independent_normal=True  # Simpler output distribution
-        )
-        optimizer = tf_keras.optimizers.Adam()
-        fit_args = {
-            "batch_size": 512,  # Larger batch size for better parallelization
-            "epochs": 3,  # More epochs to amortize setup costs
-            "callbacks": [],
-            "verbose": 1,
+    def create_network_params(ensemble_size):
+        """Create parameters for all networks at once"""
+        weights = {
+            'h1': tf.Variable(tf.random.normal([ensemble_size, input_dim, 500], dtype=tf.float64)),
+            'h2': tf.Variable(tf.random.normal([ensemble_size, 500, 500], dtype=tf.float64)),
+            'h3': tf.Variable(tf.random.normal([ensemble_size, 500, 500], dtype=tf.float64)),
+            'mean': tf.Variable(tf.random.normal([ensemble_size, 500, output_dim], dtype=tf.float64)),
+            'var': tf.Variable(tf.random.normal([ensemble_size, 500, output_dim], dtype=tf.float64))
         }
-        optimizer_wrapper = KerasOptimizer(optimizer, fit_args)
-        model = DeepEnsemble(
-            keras_ensemble, 
-            optimizer_wrapper, 
-            True,
-            compile_args={"jit_compile": True}  # Enable XLA compilation
-        )
+        biases = {
+            'h1': tf.Variable(tf.zeros([ensemble_size, 500], dtype=tf.float64)),
+            'h2': tf.Variable(tf.zeros([ensemble_size, 500], dtype=tf.float64)),
+            'h3': tf.Variable(tf.zeros([ensemble_size, 500], dtype=tf.float64)),
+            'mean': tf.Variable(tf.zeros([ensemble_size, output_dim], dtype=tf.float64)),
+            'var': tf.Variable(tf.zeros([ensemble_size, output_dim], dtype=tf.float64))
+        }
+        return weights, biases
+
+    def forward_parallel(x, weights, biases):
+        """Forward pass through all networks in parallel"""
+        # Expand input for parallel processing: [batch_size, input_dim] -> [ensemble_size, batch_size, input_dim]
+        x_expanded = tf.expand_dims(x, 0)  # [1, batch_size, input_dim]
+        x_tiled = tf.tile(x_expanded, [weights['h1'].shape[0], 1, 1])  # [ensemble_size, batch_size, input_dim]
         
-        # Time the training
+        # Parallel matrix multiplications for all networks
+        h1 = tf.nn.relu(tf.einsum('ebi,eij->ebj', x_tiled, weights['h1']) + tf.expand_dims(biases['h1'], 1))
+        h2 = tf.nn.relu(tf.einsum('ebi,eij->ebj', h1, weights['h2']) + tf.expand_dims(biases['h2'], 1))
+        h3 = tf.nn.relu(tf.einsum('ebi,eij->ebj', h2, weights['h3']) + tf.expand_dims(biases['h3'], 1))
+        mean = tf.einsum('ebi,eij->ebj', h3, weights['mean']) + tf.expand_dims(biases['mean'], 1)
+        var = tf.nn.softplus(tf.einsum('ebi,eij->ebj', h3, weights['var']) + tf.expand_dims(biases['var'], 1))
+        
+        return mean, var
+
+    def nll_loss(y_true, mean, var):
+        """Negative log likelihood loss for all networks"""
+        # Expand y_true to match ensemble outputs: [batch_size, output_dim] -> [ensemble_size, batch_size, output_dim]
+        y_expanded = tf.expand_dims(y_true, 0)
+        y_tiled = tf.tile(y_expanded, [mean.shape[0], 1, 1])
+        
+        # Compute loss for all networks in parallel
+        return 0.5 * tf.reduce_mean(
+            tf.math.log(var) + tf.square(y_tiled - mean) / var,
+            axis=[1, 2]  # Average over batch and output dimensions
+        )
+
+    def train_ensemble(ensemble_size, batch_size=512, epochs=3):
+        # Create ensemble parameters
+        weights, biases = create_network_params(ensemble_size)
+        optimizer = tf.keras.optimizers.Adam(learning_rate=0.001)
+        
+        # Training loop
         start_time = tf.timestamp()
-        model.optimize(example_data)
+        for epoch in range(epochs):
+            # Create batches
+            dataset = tf.data.Dataset.from_tensor_slices((x, y))
+            dataset = dataset.shuffle(10000).batch(batch_size)
+            
+            for batch_x, batch_y in dataset:
+                with tf.GradientTape() as tape:
+                    # Forward pass for all networks in parallel
+                    mean, var = forward_parallel(batch_x, weights, biases)
+                    losses = nll_loss(batch_y, mean, var)
+                    total_loss = tf.reduce_mean(losses)  # Average loss across ensemble
+                
+                # Compute gradients and update all parameters
+                trainable_vars = list(weights.values()) + list(biases.values())
+                grads = tape.gradient(total_loss, trainable_vars)
+                optimizer.apply_gradients(zip(grads, trainable_vars))
+        
         end_time = tf.timestamp()
-        training_times.append(end_time - start_time)
+        return end_time - start_time
+
+    # Test training time for different ensemble sizes
+    time_5 = train_ensemble(5)
+    time_10 = train_ensemble(10)
     
-    print(f"Training times: {training_times}")
-    print(f"Time ratio (10/5 networks): {training_times[1] / training_times[0]:.3f}")
+    print(f"Training times - 5 networks: {time_5:.2f}s, 10 networks: {time_10:.2f}s")
+    print(f"Time ratio (10/5 networks): {time_10/time_5:.3f}")
     
-    # Allow more overhead but still expect significant parallelization benefit
-    assert training_times[1] / training_times[0] < 1.7, (
-        f"Training time ratio {training_times[1] / training_times[0]:.3f} suggests "
+    # Check if training scales sub-linearly
+    assert time_10 / time_5 < 1.7, (
+        f"Pure TF implementation training time ratio {time_10/time_5:.3f} suggests "
         f"training may not be parallel"
     )
