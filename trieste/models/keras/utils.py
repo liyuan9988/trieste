@@ -134,6 +134,11 @@ def negative_log_likelihood(
         with a distribution as a final layer.
     :return: Negative log likelihood values.
     """
-    # Use simpler operations to reduce register pressure
+    # Compute log probabilities in parallel
     log_prob = y_pred.log_prob(y_true)
-    return -tf.reduce_mean(log_prob, axis=-1)  # Reduce to scalar per example
+    
+    # Reduce along feature dimensions while preserving batch dimension for parallel processing
+    reduced = tf.reduce_mean(log_prob, axis=-1, keepdims=True)
+    
+    # Return negative log likelihood
+    return -reduced

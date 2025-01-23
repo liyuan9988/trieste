@@ -221,25 +221,25 @@ class DeepEnsemble(
         query_points, observations = dataset.astuple()
         n_rows = dataset.observations.shape[0]
 
-        # Create inputs and outputs for all ensemble members
-        inputs_list = []
-        outputs = []
-        
-        for index in range(self.ensemble_size):
-            if self._bootstrap:
-                # For bootstrapping, sample indices for each network
-                indices = tf.random.uniform((n_rows,), maxval=n_rows, dtype=tf.dtypes.int32)
-                network_inputs = tf.gather(query_points, indices, axis=0)
-                network_outputs = tf.gather(observations, indices, axis=0)
-            else:
-                network_inputs = query_points
-                network_outputs = observations
-            
-            inputs_list.append(network_inputs)
-            outputs.append(network_outputs)
+        if self._bootstrap:
+            # Create indices for all networks at once for better parallelization
+            indices = tf.random.uniform(
+                (self.ensemble_size, n_rows), 
+                maxval=n_rows, 
+                dtype=tf.dtypes.int32
+            )
+            # Gather all inputs and outputs in parallel
+            inputs = tf.gather(query_points, indices)  # [ensemble_size, n_rows, input_dim]
+            outputs = tf.gather(observations, indices)  # [ensemble_size, n_rows, output_dim]
+            # Split outputs into list for model compatibility
+            outputs = tf.unstack(outputs, axis=0)  # List of [n_rows, output_dim]
+        else:
+            # Without bootstrapping, replicate inputs for all networks at once
+            inputs = tf.tile(tf.expand_dims(query_points, 0), [self.ensemble_size, 1, 1])
+            outputs = [observations] * self.ensemble_size
 
-        # Stack inputs along the last dimension
-        inputs = tf.transpose(tf.stack(inputs_list), [1, 2, 0])  # [n_rows, input_dim, ensemble_size]
+        # Transpose inputs to [n_rows, input_dim, ensemble_size] for parallel processing
+        inputs = tf.transpose(inputs, [1, 2, 0])
 
         return inputs, outputs
 
