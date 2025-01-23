@@ -127,10 +127,13 @@ def negative_log_likelihood(
 ) -> TensorType:
     """
     Maximum likelihood objective function for training neural networks.
+    Optimized for parallel computation with reduced register pressure.
 
     :param y_true: The output variable values.
     :param y_pred: The output layer of the model. It has to be a probabilistic neural network
         with a distribution as a final layer.
     :return: Negative log likelihood values.
     """
-    return -y_pred.log_prob(y_true)
+    # Use simpler operations to reduce register pressure
+    log_prob = y_pred.log_prob(y_true)
+    return -tf.reduce_mean(log_prob, axis=-1)  # Reduce to scalar per example

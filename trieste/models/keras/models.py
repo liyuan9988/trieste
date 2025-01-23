@@ -153,9 +153,14 @@ class DeepEnsemble(
         if self.optimizer.metrics is None:
             self.optimizer.metrics = ["mse"]
 
+        # Create loss weights to balance network contributions
+        loss_weights = {f"model_{i}_output": 1.0/model.ensemble_size 
+                       for i in range(model.ensemble_size)}
+
         model.model.compile(
             optimizer=self.optimizer.optimizer,
             loss=[self.optimizer.loss] * model.ensemble_size,
+            loss_weights=loss_weights,  # Add loss weights to help optimizer
             metrics=[self.optimizer.metrics] * model.ensemble_size,
             **compile_args,
         )
