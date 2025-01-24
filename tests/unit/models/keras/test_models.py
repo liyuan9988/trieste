@@ -892,12 +892,14 @@ def test_pure_tf_ensemble_parallel_training():
         
         # Initialize all weights in a single tensor for each layer
         # Shape: [ensemble_size, in_dim, out_dim]
+        tf_input_dim = tf.sqrt(tf.constant(float(input_dim), dtype=tf.float64))
+        tf_width = tf.sqrt(tf.constant(float(width), dtype=tf.float64))
         weights = {
-            'h1': tf.Variable(tf.random.normal([ensemble_size, input_dim, width], dtype=tf.float64) / tf.sqrt(float(input_dim))),
-            'h2': tf.Variable(tf.random.normal([ensemble_size, width, width], dtype=tf.float64) / tf.sqrt(float(width))),
-            'h3': tf.Variable(tf.random.normal([ensemble_size, width, width], dtype=tf.float64) / tf.sqrt(float(width))),
-            'mean': tf.Variable(tf.random.normal([ensemble_size, width, output_dim], dtype=tf.float64) / tf.sqrt(float(width))),
-            'var': tf.Variable(tf.random.normal([ensemble_size, width, output_dim], dtype=tf.float64) / tf.sqrt(float(width)))
+            'h1': tf.Variable(tf.random.normal([ensemble_size, input_dim, width], dtype=tf.float64) / tf_input_dim),
+            'h2': tf.Variable(tf.random.normal([ensemble_size, width, width], dtype=tf.float64) / tf_width),
+            'h3': tf.Variable(tf.random.normal([ensemble_size, width, width], dtype=tf.float64) / tf_width),
+            'mean': tf.Variable(tf.random.normal([ensemble_size, width, output_dim], dtype=tf.float64) / tf_width),
+            'var': tf.Variable(tf.random.normal([ensemble_size, width, output_dim], dtype=tf.float64) / tf_width)
         }
         # Initialize all biases in a single tensor for each layer
         # Shape: [ensemble_size, out_dim]
