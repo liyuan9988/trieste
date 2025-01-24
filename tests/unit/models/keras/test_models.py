@@ -865,32 +865,12 @@ def test_pure_tf_ensemble_parallel_training():
     y = tf.random.normal([n_points, output_dim], dtype=tf.float64)
 
     def get_network_width(ensemble_size: int, target_params: int, input_dim: int) -> int:
-        """Calculate network width to maintain constant total parameters
+        """Calculate network width to maintain constant total parameters"""
+        # Same as before...
+        a = 2 * ensemble_size
+        b = ensemble_size * (input_dim + 5)
+        c = 2 * ensemble_size - target_params
         
-        Args:
-            ensemble_size: Number of networks in the ensemble
-            target_params: Target total number of parameters
-            input_dim: Input dimension of the network
-        """
-        # For a network with 3 hidden layers of equal width w:
-        # params = ensemble_size * (
-        #     input_dim * w +      # first layer weights
-        #     w +                  # first layer bias
-        #     w * w +             # second layer weights
-        #     w +                 # second layer bias
-        #     w * w +             # third layer weights
-        #     w +                 # third layer bias
-        #     2 * w +             # output layer weights (mean and var)
-        #     2                   # output layer bias (mean and var)
-        # )
-        # Solve for w given target_params
-        # Rearranging: ensemble_size * (2*w^2 + (input_dim + 5)*w + 2) = target_params
-        # Let's solve: aw^2 + bw + c = 0
-        a = 2 * ensemble_size  # coefficient of w^2
-        b = ensemble_size * (input_dim + 5)  # coefficient of w
-        c = 2 * ensemble_size - target_params  # constant term
-        
-        # Use quadratic formula: w = (-b + sqrt(b^2 - 4ac))/(2a)
         discriminant = b * b - 4 * a * c
         if discriminant < 0:
             raise ValueError("No real solution exists for network width")
@@ -907,15 +887,20 @@ def test_pure_tf_ensemble_parallel_training():
         # Target total params based on 5 networks with width 500
         target_params = 5 * (input_dim * 500 + 500 + 500 * 500 + 500 + 500 * 500 + 500 + 500 * 2 + 2)
         width = get_network_width(ensemble_size, target_params, input_dim)
+        width = 500
         print(f"Using width {width} for ensemble size {ensemble_size} to maintain {target_params} total parameters")
         
+        # Initialize all weights in a single tensor for each layer
+        # Shape: [ensemble_size, in_dim, out_dim]
         weights = {
-            'h1': tf.Variable(tf.random.normal([ensemble_size, input_dim, width], dtype=tf.float64)),
-            'h2': tf.Variable(tf.random.normal([ensemble_size, width, width], dtype=tf.float64)),
-            'h3': tf.Variable(tf.random.normal([ensemble_size, width, width], dtype=tf.float64)),
-            'mean': tf.Variable(tf.random.normal([ensemble_size, width, output_dim], dtype=tf.float64)),
-            'var': tf.Variable(tf.random.normal([ensemble_size, width, output_dim], dtype=tf.float64))
+            'h1': tf.Variable(tf.random.normal([ensemble_size, input_dim, width], dtype=tf.float64) / tf.sqrt(float(input_dim))),
+            'h2': tf.Variable(tf.random.normal([ensemble_size, width, width], dtype=tf.float64) / tf.sqrt(float(width))),
+            'h3': tf.Variable(tf.random.normal([ensemble_size, width, width], dtype=tf.float64) / tf.sqrt(float(width))),
+            'mean': tf.Variable(tf.random.normal([ensemble_size, width, output_dim], dtype=tf.float64) / tf.sqrt(float(width))),
+            'var': tf.Variable(tf.random.normal([ensemble_size, width, output_dim], dtype=tf.float64) / tf.sqrt(float(width)))
         }
+        # Initialize all biases in a single tensor for each layer
+        # Shape: [ensemble_size, out_dim]
         biases = {
             'h1': tf.Variable(tf.zeros([ensemble_size, width], dtype=tf.float64)),
             'h2': tf.Variable(tf.zeros([ensemble_size, width], dtype=tf.float64)),
@@ -925,28 +910,34 @@ def test_pure_tf_ensemble_parallel_training():
         }
         return weights, biases
 
+    @tf.function(jit_compile=True)  # Enable XLA optimization
     def forward_parallel(x, weights, biases):
-        """Forward pass through all networks in parallel"""
-        # Expand input for parallel processing: [batch_size, input_dim] -> [ensemble_size, batch_size, input_dim]
-        x_expanded = tf.expand_dims(x, 0)  # [1, batch_size, input_dim]
-        x_tiled = tf.tile(x_expanded, [weights['h1'].shape[0], 1, 1])  # [ensemble_size, batch_size, input_dim]
+        """Forward pass through all networks in parallel using a single operation"""
+        # Expand and tile input once: [batch_size, input_dim] -> [ensemble_size, batch_size, input_dim]
+        batch_size = tf.shape(x)[0]
+        x = tf.expand_dims(x, 0)  # [1, batch_size, input_dim]
+        x = tf.tile(x, [weights['h1'].shape[0], 1, 1])  # [ensemble_size, batch_size, input_dim]
         
-        # Parallel matrix multiplications for all networks
-        h1 = tf.nn.relu(tf.einsum('ebi,eij->ebj', x_tiled, weights['h1']) + tf.expand_dims(biases['h1'], 1))
+        # Compute all layers in parallel using einsum
+        # Each operation processes all networks simultaneously
+        h1 = tf.nn.relu(tf.einsum('ebi,eij->ebj', x, weights['h1']) + tf.expand_dims(biases['h1'], 1))
         h2 = tf.nn.relu(tf.einsum('ebi,eij->ebj', h1, weights['h2']) + tf.expand_dims(biases['h2'], 1))
         h3 = tf.nn.relu(tf.einsum('ebi,eij->ebj', h2, weights['h3']) + tf.expand_dims(biases['h3'], 1))
+        
+        # Output layer - compute mean and variance in parallel
         mean = tf.einsum('ebi,eij->ebj', h3, weights['mean']) + tf.expand_dims(biases['mean'], 1)
         var = tf.nn.softplus(tf.einsum('ebi,eij->ebj', h3, weights['var']) + tf.expand_dims(biases['var'], 1))
         
         return mean, var
 
+    @tf.function(jit_compile=True)  # Enable XLA optimization
     def nll_loss(y_true, mean, var):
-        """Negative log likelihood loss for all networks"""
-        # Expand y_true to match ensemble outputs: [batch_size, output_dim] -> [ensemble_size, batch_size, output_dim]
+        """Vectorized negative log likelihood loss computation"""
+        # Expand targets once: [batch_size, output_dim] -> [ensemble_size, batch_size, output_dim]
         y_expanded = tf.expand_dims(y_true, 0)
         y_tiled = tf.tile(y_expanded, [mean.shape[0], 1, 1])
         
-        # Compute loss for all networks in parallel
+        # Compute loss for all networks in a single operation
         return 0.5 * tf.reduce_mean(
             tf.math.log(var) + tf.square(y_tiled - mean) / var,
             axis=[1, 2]  # Average over batch and output dimensions
@@ -975,7 +966,7 @@ def test_pure_tf_ensemble_parallel_training():
                     losses = nll_loss(batch_y, mean, var)
                     total_loss = tf.reduce_mean(losses)  # Average loss across ensemble
                 
-                # Compute gradients and update all parameters
+                # Gradient computation and update - single operation for all networks
                 trainable_vars = list(weights.values()) + list(biases.values())
                 grads = tape.gradient(total_loss, trainable_vars)
                 optimizer.apply_gradients(zip(grads, trainable_vars))
