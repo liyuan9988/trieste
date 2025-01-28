@@ -430,7 +430,8 @@ class DeepEnsemble(
             # Original behavior when no validation split is requested
             return (
                 dataset.prefetch(tf.data.AUTOTUNE)
-                .shuffle(train_size, reshuffle_each_iteration=True)
+                .shuffle(num_points, reshuffle_each_iteration=True)
+                .repeat()
                 .batch(batch_size, drop_remainder=True)
             )
 
