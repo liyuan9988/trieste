@@ -471,15 +471,6 @@ class DeepEnsemble(
         )
         fit_args_copy["batch_size"] = None  # batching is done in prepare_tf_data
 
-        if validation_split > 0:
-            train_dataset, val_dataset = tf_data
-            fit_args_copy["validation_data"] = val_dataset
-            history = self.model.fit(
-                train_dataset, **fit_args_copy, initial_epoch=self._absolute_epochs
-            )
-        else:
-            history = self.model.fit(tf_data, **fit_args_copy, initial_epoch=self._absolute_epochs)
-
         history = self.model.fit(
             tf_data,
             **fit_args_copy,
