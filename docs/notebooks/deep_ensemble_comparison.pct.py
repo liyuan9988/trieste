@@ -158,7 +158,6 @@ def build_and_train_model(data: Dataset, epochs: int, batch_size: int, kappa: in
         "batch_size": batch_size,
         "epochs": warmup_epochs + decay_epochs,
         "verbose": 2,
-        "validation_data": val_data,
         "callbacks": [
             tf_keras.callbacks.TensorBoard(
                 log_dir=log_dir,
@@ -185,7 +184,7 @@ def build_and_train_model(data: Dataset, epochs: int, batch_size: int, kappa: in
     
     if profile:
         tf.profiler.experimental.start(log_dir)
-    model.optimize(data)
+    model.optimize(data, val_data)
     if profile:
         tf.profiler.experimental.stop()
 
