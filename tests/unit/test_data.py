@@ -27,6 +27,7 @@ from trieste.data import (
     check_and_extract_fidelity_query_points,
     get_dataset_for_fidelity,
     split_dataset_by_fidelity,
+    split_dataset_randomly,
 )
 from trieste.utils import shapes_equal
 
@@ -293,3 +294,53 @@ def test_multifidelity_add_fidelity_column() -> None:
     fidelity_removed_query_points = fidelity_zero_query_points[:, :-1]
     fidelity_zero_out_query_points = add_fidelity_column(fidelity_removed_query_points, fidelity=0)
     npt.assert_allclose(fidelity_zero_out_query_points, fidelity_zero_query_points)
+
+
+def test_split_dataset_randomly_invalid_proportion() -> None:
+    dataset = Dataset(tf.constant([[0.0], [1.0]]), tf.constant([[0.0], [1.0]]))
+    with pytest.raises(ValueError, match="proportion must be between 0 and 1"):
+        split_dataset_randomly(dataset, -0.1)
+    with pytest.raises(ValueError, match="proportion must be between 0 and 1"):
+        split_dataset_randomly(dataset, 1.1)
+
+
+def test_split_dataset_randomly_empty_dataset() -> None:
+    empty_dataset = Dataset(tf.zeros([0, 1]), tf.zeros([0, 1]))
+    first, second = split_dataset_randomly(empty_dataset, 0.7)
+    assert_datasets_allclose(first, empty_dataset)
+    assert_datasets_allclose(second, empty_dataset)
+
+
+def test_split_dataset_randomly_deterministic() -> None:
+    dataset = Dataset(
+        tf.constant([[0.0], [1.0], [2.0], [3.0], [4.0]]),
+        tf.constant([[0.0], [1.0], [2.0], [3.0], [4.0]]),
+    )
+
+    # Test with same seed gives same split
+    first1, second1 = split_dataset_randomly(dataset, 0.6, seed=42)
+    first2, second2 = split_dataset_randomly(dataset, 0.6, seed=42)
+    assert_datasets_allclose(first1, first2)
+    assert_datasets_allclose(second1, second2)
+
+
+@pytest.mark.parametrize("proportion", [0.0, 0.3, 0.5, 0.7, 1.0])
+def test_split_dataset_randomly_proportions(proportion: float) -> None:
+    dataset = Dataset(
+        tf.constant([[0.0], [1.0], [2.0], [3.0], [4.0], [5.0], [6.0], [7.0], [8.0], [9.0]]),
+        tf.constant([[0.0], [1.0], [2.0], [3.0], [4.0], [5.0], [6.0], [7.0], [8.0], [9.0]]),
+    )
+
+    # Test different proportions
+    first, second = split_dataset_randomly(dataset, proportion, seed=42)
+    expected_first_size = int(len(dataset) * proportion)
+    assert len(first) == expected_first_size
+    assert len(second) == len(dataset) - expected_first_size
+
+    # Check that all points are preserved (just reordered)
+    combined_points = tf.concat([first.query_points, second.query_points], axis=0)
+    combined_obs = tf.concat([first.observations, second.observations], axis=0)
+    sorted_points = tf.sort(combined_points, axis=0)
+    sorted_obs = tf.sort(combined_obs, axis=0)
+    npt.assert_allclose(sorted_points, tf.sort(dataset.query_points, axis=0))
+    npt.assert_allclose(sorted_obs, tf.sort(dataset.observations, axis=0))
