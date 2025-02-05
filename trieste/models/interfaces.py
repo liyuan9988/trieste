@@ -806,7 +806,7 @@ class EncodedTrainableProbabilisticModel(EncodedProbabilisticModel, TrainablePro
         """Implementation of update on the encoded dataset."""
 
     @abstractmethod
-    def optimize_encoded(self, dataset: Dataset) -> Any:
+    def optimize_encoded(self, dataset: Dataset, validation_data: Dataset | None = None) -> Any:
         """Implementation of optimize on the encoded dataset."""
 
     @final
@@ -814,8 +814,8 @@ class EncodedTrainableProbabilisticModel(EncodedProbabilisticModel, TrainablePro
         return self.update_encoded(self.encode(dataset))
 
     @final
-    def optimize(self, dataset: Dataset) -> Any:
-        return self.optimize_encoded(self.encode(dataset))
+    def optimize(self, dataset: Dataset, validation_data: Dataset | None = None) -> Any:
+        return self.optimize_encoded(self.encode(dataset), validation_data)
 
 
 class EncodedSupportsPredictJoint(EncodedProbabilisticModel, SupportsPredictJoint):
