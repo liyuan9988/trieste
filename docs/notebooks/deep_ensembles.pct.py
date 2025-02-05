@@ -54,7 +54,7 @@ def objective(x, error=True):
     return y
 
 
-num_points = 20
+num_points = 20000
 
 # we define the [-4,4] interval using a `Box` search space that has convenient sampling methods
 search_space = Box([-4], [4])
