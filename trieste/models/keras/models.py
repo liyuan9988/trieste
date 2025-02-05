@@ -199,7 +199,7 @@ class DeepEnsemble(
         return self._model.num_outputs
 
     def prepare_dataset(
-        self, dataset: Dataset
+        self, dataset: Dataset, do_not_bootstrap: bool = False
     ) -> tuple[Dict[str, TensorType], Dict[str, TensorType]]:
         """
         Transform ``dataset`` into inputs and outputs with correct names that can be used for
@@ -215,7 +215,7 @@ class DeepEnsemble(
         inputs = {}
         outputs = {}
         for index in range(self.ensemble_size):
-            if self._bootstrap:
+            if self._bootstrap and not do_not_bootstrap:
                 resampled_data = sample_with_replacement(dataset)
             else:
                 resampled_data = dataset
@@ -377,7 +377,7 @@ class DeepEnsemble(
         """
         return
 
-    def optimize_encoded(self, dataset: Dataset) -> tf_keras.callbacks.History:
+    def optimize_encoded(self, dataset: Dataset, validation_data: Dataset | None = None) -> tf_keras.callbacks.History:
         """
         Optimize the underlying Keras ensemble model with the specified ``dataset``.
 
@@ -392,6 +392,7 @@ class DeepEnsemble(
         stored in a history attribute of the model object.
 
         :param dataset: The data with which to optimize the model.
+        :param validation_data: The data with which to validate the model.
         """
         fit_args = dict(self.optimizer.fit_args)
 
@@ -403,12 +404,22 @@ class DeepEnsemble(
             fit_args["epochs"] = fit_args["epochs"] + self._absolute_epochs
 
         x, y = self.prepare_dataset(dataset)
-        history = self.model.fit(
-            x=x,
-            y=y,
-            **fit_args,
-            initial_epoch=self._absolute_epochs,
-        )
+        if validation_data:
+            x_val, y_val = self.prepare_dataset(validation_data, do_not_bootstrap=True)
+            history = self.model.fit(
+                x=x,
+                y=y,
+                **fit_args,
+                initial_epoch=self._absolute_epochs,
+                validation_data=(x_val, y_val),
+            )
+        else:
+            history = self.model.fit(
+                x=x,
+                y=y,
+                **fit_args,
+                initial_epoch=self._absolute_epochs,
+            )
         if self._continuous_optimisation:
             self._absolute_epochs = self._absolute_epochs + len(history.history["loss"])
 
