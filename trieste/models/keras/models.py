@@ -207,7 +207,7 @@ class DeepEnsemble(
 
     def prepare_dataset(
         self, dataset: Dataset
-    ) -> tuple[Dict[str, TensorType], Dict[str, TensorType]]:
+    ) -> tf.data.Dataset:
         """
         Transform ``dataset`` into inputs and outputs with correct names that can be used for
         training the :class:`KerasEnsemble` model.
@@ -217,7 +217,7 @@ class DeepEnsemble(
         each network in the ensemble.
 
         :param dataset: A dataset with ``query_points`` and ``observations`` tensors.
-        :return: A dictionary with input data and a dictionary with output data.
+        :return: A TF dataset containing input/output data keyed by index of ensemble model.
         """
         inputs = {}
         outputs = {}
@@ -230,7 +230,7 @@ class DeepEnsemble(
             output_name = self.model.output_names[index]
             inputs[input_name], outputs[output_name] = resampled_data.astuple()
 
-        return inputs, outputs
+        return tf.data.Dataset.from_tensor_slices((inputs, outputs))
 
     def prepare_query_points(self, query_points: TensorType) -> Dict[str, TensorType]:
         """
@@ -479,10 +479,9 @@ class DeepEnsemble(
         if "epochs" in fit_args:
             fit_args["epochs"] = fit_args["epochs"] + self._absolute_epochs
 
-        x, y = self.prepare_dataset(dataset)
+        training_dataset = self.prepare_dataset(dataset)
         history = self.model.fit(
-            x=x,
-            y=y,
+            training_dataset,
             **fit_args,
             initial_epoch=self._absolute_epochs,
         )
