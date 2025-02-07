@@ -311,12 +311,34 @@ class GaussianNetwork(KerasEnsembleNetwork):
         return input_tensor
 
     def _gen_hidden_layers(self, input_tensor: tf.Tensor) -> tf.Tensor:
+        """
+        Generate a sequence of hidden layers. By default we use Dense -> BatchNorm -> Activation 
+        for each specified hidden layer in self._hidden_layer_args.
+        """
         for index, hidden_layer_args in enumerate(self._hidden_layer_args):
+            # For clarity, let's separate out the activation from the dense args
+            # so we can execute it after batch normalization.
+            activation = hidden_layer_args.pop("activation", None)
             layer_name = f"{self.network_name}dense_{index}"
-            layer = tf_keras.layers.Dense(
-                **hidden_layer_args, name=layer_name, dtype=input_tensor.dtype.name
-            )
-            input_tensor = layer(input_tensor)
+            
+            # Dense Layer
+            x = tf_keras.layers.Dense(
+                **hidden_layer_args,  # e.g. units=50
+                name=layer_name,
+                dtype=input_tensor.dtype.name
+            )(input_tensor)
+            
+            # BatchNormalization
+            x = tf_keras.layers.BatchNormalization(name=f"{layer_name}_bn")(x)
+            
+            # Re-apply the activation now that we've normalized
+            if activation:
+                x = tf_keras.layers.Activation(
+                    activation, 
+                    name=f"{layer_name}_{activation}"
+                )(x)
+            
+            input_tensor = x
 
         return input_tensor
 
