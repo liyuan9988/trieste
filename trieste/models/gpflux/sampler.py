@@ -60,9 +60,7 @@ class DeepGaussianProcessReparamSampler(ReparametrizationSampler):
             )
 
         if not isinstance(model, DeepGP):
-            raise ValueError(
-                f"GPflux model must be a gpflux.models.DeepGP, received {type(model)}"
-            )
+            raise ValueError(f"GPflux model must be a gpflux.models.DeepGP, received {type(model)}")
 
         self._model = model
 

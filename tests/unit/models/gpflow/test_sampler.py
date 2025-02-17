@@ -54,13 +54,10 @@ from trieste.models.gpflow.sampler import (
     qmc_normal_samples,
 )
 from trieste.models.interfaces import (
-    ReparametrizationSampler,
     SupportsGetInducingVariables,
-    SupportsPredictJoint,
 )
 from trieste.objectives import Branin
 from trieste.types import TensorType
-
 
 DecoupledSamplingModel = Callable[[Dataset], Tuple[int, FeatureDecompositionTrajectorySamplerModel]]
 
@@ -110,16 +107,13 @@ def _decoupled_sampling_model_fixture(request: Any) -> DecoupledSamplingModel:
         (BatchReparametrizationSampler, "(20)"),
         (IndependentReparametrizationFunctionSampler, "(20)"),
         (IndependentReparametrizationSampler, "(20, QuadraticMeanAndRBFKernel())"),
-    ]
+    ],
 )
 def test_reparametrization_sampler_reprs(
     sampler: type[BatchReparametrizationSampler | IndependentReparametrizationSampler],
     expected_repr: str,
 ) -> None:
-    assert (
-        repr(sampler(20, QuadraticMeanAndRBFKernel()))
-        == f"{sampler.__name__}{expected_repr}"
-    )
+    assert repr(sampler(20, QuadraticMeanAndRBFKernel())) == f"{sampler.__name__}{expected_repr}"
 
 
 @pytest.mark.parametrize("qmc", [True, False])

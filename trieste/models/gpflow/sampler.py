@@ -95,11 +95,11 @@ class IndependentReparametrizationFunctionSampler(ReparametrizationSampler):
     """Number of sobol sequence points to skip. This is incremented for each sampler."""
 
     def __init__(
-            self, sample_size: int,
-            fn: Callable[[tf.Tensor],
-            Tuple[tf.Tensor, tf.Tensor]],
-            qmc: bool = False,
-            qmc_skip: bool = True,
+        self,
+        sample_size: int,
+        fn: Callable[[tf.Tensor], Tuple[tf.Tensor, tf.Tensor]],
+        qmc: bool = False,
+        qmc_skip: bool = True,
     ):
         """
         :param sample_size: The number of samples to take at each point. Must be positive.
@@ -145,7 +145,9 @@ class IndependentReparametrizationFunctionSampler(ReparametrizationSampler):
             if self._qmc:
                 if self._qmc_skip:
                     skip = IndependentReparametrizationFunctionSampler.skip
-                    IndependentReparametrizationFunctionSampler.skip.assign(skip + self._sample_size)
+                    IndependentReparametrizationFunctionSampler.skip.assign(
+                        skip + self._sample_size
+                    )
                 else:
                     skip = tf.constant(0)
                 normal_samples = qmc_normal_samples(
@@ -168,22 +170,18 @@ class IndependentReparametrizationFunctionSampler(ReparametrizationSampler):
 
         return mean + tf.sqrt(var) * self._eps[:, None, :]  # [..., S, 1, L]
 
+
 class IndependentReparametrizationSampler(IndependentReparametrizationFunctionSampler):
 
-    def __init__(self, sample_size: int, model: ProbabilisticModel, qmc: bool = False,
-                         qmc_skip: bool = True):
-        super().__init__(
-            sample_size=sample_size,
-            fn=model.predict,
-            qmc=qmc,
-            qmc_skip=qmc_skip
-        )
+    def __init__(
+        self, sample_size: int, model: ProbabilisticModel, qmc: bool = False, qmc_skip: bool = True
+    ):
+        super().__init__(sample_size=sample_size, fn=model.predict, qmc=qmc, qmc_skip=qmc_skip)
         self._model = model
 
     def __repr__(self) -> str:
         """"""
         return f"{self.__class__.__name__}({self._sample_size!r}, {self._model!r})"
-
 
 
 class BatchReparametrizationSampler(ReparametrizationSampler):
@@ -264,7 +262,9 @@ class BatchReparametrizationSampler(ReparametrizationSampler):
             if self._qmc:
                 if self._qmc_skip:
                     skip = IndependentReparametrizationFunctionSampler.skip
-                    IndependentReparametrizationFunctionSampler.skip.assign(skip + self._sample_size)
+                    IndependentReparametrizationFunctionSampler.skip.assign(
+                        skip + self._sample_size
+                    )
                 else:
                     skip = tf.constant(0)
                 normal_samples = qmc_normal_samples(
