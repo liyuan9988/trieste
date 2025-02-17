@@ -46,6 +46,7 @@ from .models import (
 from .sampler import (
     BatchReparametrizationSampler,
     DecoupledTrajectorySampler,
+    IndependentReparametrizationFunctionSampler,
     IndependentReparametrizationSampler,
     RandomFourierFeatureTrajectorySampler,
     feature_decomposition_trajectory,

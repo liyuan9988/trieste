@@ -23,10 +23,6 @@ class PseudoBatchReparametrizationSampler(BatchReparametrizationSampler):
         self._samples = samples  # [S, B, L]
         super().__init__(1, QuadraticMeanAndRBFKernel())
 
-    def __repr__(self) -> str:
-        """"""
-        return f"{self.__class__.__name__}({self._samples!r})"
-
     def sample(self, at: TensorType, *, jitter: float = DEFAULTS.JITTER) -> TensorType:
         """
         :param at: Batches of query points at which to sample the predictive distribution, with

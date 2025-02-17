@@ -564,32 +564,30 @@ class TrainablePredictJointReparamModelStack(
     """A stack of models that are both trainable and support predict_joint."""
 
 
-class ReparametrizationSampler(ABC, Generic[ProbabilisticModelType]):
+class ReparametrizationSampler(ABC):
     r"""
     These samplers employ the *reparameterization trick* to draw samples from a
     :class:`ProbabilisticModel`\ 's predictive distribution  across a discrete set of
     points. See :cite:`wilson2018maximizing` for details.
     """
 
-    def __init__(self, sample_size: int, model: ProbabilisticModelType):
+    def __init__(self, sample_size: int):
         r"""
         Note that our :class:`TrainableModelStack` currently assumes that
         all :class:`ReparametrizationSampler` constructors have **only** these inputs
         and so will not work with more complicated constructors.
 
         :param sample_size: The desired number of samples.
-        :param model: The model to sample from.
         :raise ValueError (or InvalidArgumentError): If ``sample_size`` is not positive.
         """
         tf.debugging.assert_positive(sample_size)
 
         self._sample_size = sample_size
-        self._model = model
         self._initialized = tf.Variable(False)  # Keep track of when we need to resample
 
     def __repr__(self) -> str:
         """"""
-        return f"{self.__class__.__name__}({self._sample_size!r}, {self._model!r})"
+        return f"{self.__class__.__name__}({self._sample_size!r})"
 
     @abstractmethod
     def sample(self, at: TensorType, *, jitter: float = DEFAULTS.JITTER) -> TensorType:

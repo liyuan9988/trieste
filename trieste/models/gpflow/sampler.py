@@ -80,7 +80,7 @@ def qmc_normal_samples(
     return normal_samples
 
 
-class IndependentReparametrizationSampler(ReparametrizationSampler[ProbabilisticModel]):
+class IndependentReparametrizationFunctionSampler(ReparametrizationSampler):
     r"""
     This sampler employs the *reparameterization trick* to approximate samples from a
     :class:`ProbabilisticModel`\ 's predictive distribution as
@@ -95,18 +95,23 @@ class IndependentReparametrizationSampler(ReparametrizationSampler[Probabilistic
     """Number of sobol sequence points to skip. This is incremented for each sampler."""
 
     def __init__(
-        self, sample_size: int, model: ProbabilisticModel, qmc: bool = False, qmc_skip: bool = True
+            self, sample_size: int,
+            fn: Callable[[tf.Tensor],
+            Tuple[tf.Tensor, tf.Tensor]],
+            qmc: bool = False,
+            qmc_skip: bool = True,
     ):
         """
         :param sample_size: The number of samples to take at each point. Must be positive.
-        :param model: The model to sample from.
+        :param fn: The prediction function to sample from.
         :param qmc: Whether to use QMC sobol sampling instead of random normal sampling. QMC
             sampling more accurately approximates a normal distribution than truly random samples.
         :param qmc_skip: Whether to use the skip parameter to ensure the QMC sampler gives different
             samples whenever it is reset. This is not supported with XLA.
         :raise ValueError (or InvalidArgumentError): If ``sample_size`` is not positive.
         """
-        super().__init__(sample_size, model)
+        super().__init__(sample_size)
+        self._fn = fn
         self._eps: Optional[tf.Variable] = None
         self._qmc = qmc
         self._qmc_skip = qmc_skip
@@ -132,15 +137,15 @@ class IndependentReparametrizationSampler(ReparametrizationSampler[Probabilistic
         :raise ValueError (or InvalidArgumentError): If ``at`` has an invalid shape or ``jitter``
             is negative.
         """
-        mean, var = self._model.predict(at[..., None, :, :])  # [..., 1, 1, L], [..., 1, 1, L]
+        mean, var = self._fn(at[..., None, :, :])  # [..., 1, 1, L], [..., 1, 1, L]
         var = ensure_positive(var) if jitter < 0 else (var + jitter)
 
         def sample_eps() -> tf.Tensor:
             self._initialized.assign(True)
             if self._qmc:
                 if self._qmc_skip:
-                    skip = IndependentReparametrizationSampler.skip
-                    IndependentReparametrizationSampler.skip.assign(skip + self._sample_size)
+                    skip = IndependentReparametrizationFunctionSampler.skip
+                    IndependentReparametrizationFunctionSampler.skip.assign(skip + self._sample_size)
                 else:
                     skip = tf.constant(0)
                 normal_samples = qmc_normal_samples(
@@ -163,8 +168,25 @@ class IndependentReparametrizationSampler(ReparametrizationSampler[Probabilistic
 
         return mean + tf.sqrt(var) * self._eps[:, None, :]  # [..., S, 1, L]
 
+class IndependentReparametrizationSampler(IndependentReparametrizationFunctionSampler):
 
-class BatchReparametrizationSampler(ReparametrizationSampler[SupportsPredictJoint]):
+    def __init__(self, sample_size: int, model: ProbabilisticModel, qmc: bool = False,
+                         qmc_skip: bool = True):
+        super().__init__(
+            sample_size=sample_size,
+            fn=model.predict,
+            qmc=qmc,
+            qmc_skip=qmc_skip
+        )
+        self._model = model
+
+    def __repr__(self) -> str:
+        """"""
+        return f"{self.__class__.__name__}({self._sample_size!r}, {self._model!r})"
+
+
+
+class BatchReparametrizationSampler(ReparametrizationSampler):
     r"""
     This sampler employs the *reparameterization trick* to approximate batches of samples from a
     :class:`ProbabilisticModel`\ 's predictive joint distribution as
@@ -195,12 +217,13 @@ class BatchReparametrizationSampler(ReparametrizationSampler[SupportsPredictJoin
             samples whenever it is reset. This is not supported with XLA.
         :raise ValueError (or InvalidArgumentError): If ``sample_size`` is not positive.
         """
-        super().__init__(sample_size, model)
+        super().__init__(sample_size)
         if not isinstance(model, SupportsPredictJoint):
             raise NotImplementedError(
                 f"BatchReparametrizationSampler only works with models that support "
                 f"predict_joint; received {model!r}"
             )
+        self._model = model
         self._eps: Optional[tf.Variable] = None
         self._qmc = qmc
         self._qmc_skip = qmc_skip
@@ -240,8 +263,8 @@ class BatchReparametrizationSampler(ReparametrizationSampler[SupportsPredictJoin
             self._initialized.assign(True)
             if self._qmc:
                 if self._qmc_skip:
-                    skip = IndependentReparametrizationSampler.skip
-                    IndependentReparametrizationSampler.skip.assign(skip + self._sample_size)
+                    skip = IndependentReparametrizationFunctionSampler.skip
+                    IndependentReparametrizationFunctionSampler.skip.assign(skip + self._sample_size)
                 else:
                     skip = tf.constant(0)
                 normal_samples = qmc_normal_samples(

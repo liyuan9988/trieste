@@ -36,7 +36,7 @@ from ..interfaces import (
 from .interface import GPfluxPredictor
 
 
-class DeepGaussianProcessReparamSampler(ReparametrizationSampler[GPfluxPredictor]):
+class DeepGaussianProcessReparamSampler(ReparametrizationSampler):
     r"""
     This sampler employs the *reparameterization trick* to approximate samples from a
     :class:`GPfluxPredictor`\ 's predictive distribution, when the :class:`GPfluxPredictor` has
@@ -51,17 +51,20 @@ class DeepGaussianProcessReparamSampler(ReparametrizationSampler[GPfluxPredictor
             model is not a :class:`GPfluxPredictor`, of if its underlying ``model_gpflux`` is not a
             :class:`~gpflux.models.DeepGP`.
         """
+
+        super().__init__(sample_size)
+
         if not isinstance(model, GPfluxPredictor):
             raise ValueError(
                 f"Model must be a gpflux.interface.GPfluxPredictor, received {type(model)}"
             )
 
-        super().__init__(sample_size, model)
-
-        if not isinstance(self._model_gpflux, DeepGP):
+        if not isinstance(model, DeepGP):
             raise ValueError(
-                f"GPflux model must be a gpflux.models.DeepGP, received {type(self._model_gpflux)}"
+                f"GPflux model must be a gpflux.models.DeepGP, received {type(model)}"
             )
+
+        self._model = model
 
         # Each element of _eps_list is essentially a lazy constant. It is declared and assigned an
         # empty tensor here, and populated on the first call to sample
@@ -73,6 +76,10 @@ class DeepGaussianProcessReparamSampler(ReparametrizationSampler[GPfluxPredictor
             for _ in range(len(self._model_gpflux.f_layers))
         ]
         self._encode = lambda x: model.encode(x)
+
+    def __repr__(self) -> str:
+        """"""
+        return f"{self.__class__.__name__}({self._sample_size!r}, {self._model!r})"
 
     @property
     def _model_gpflux(self) -> tf.Module:
