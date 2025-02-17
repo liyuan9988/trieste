@@ -43,8 +43,8 @@ from trieste.models.gpflow import (
     BatchReparametrizationSampler,
     DecoupledTrajectorySampler,
     GaussianProcessRegression,
-    IndependentReparametrizationSampler,
     IndependentReparametrizationFunctionSampler,
+    IndependentReparametrizationSampler,
     RandomFourierFeatureTrajectorySampler,
     SparseVariational,
     feature_decomposition_trajectory,
@@ -53,9 +53,7 @@ from trieste.models.gpflow.sampler import (
     FeatureDecompositionTrajectorySamplerModel,
     qmc_normal_samples,
 )
-from trieste.models.interfaces import (
-    SupportsGetInducingVariables,
-)
+from trieste.models.interfaces import SupportsGetInducingVariables
 from trieste.objectives import Branin
 from trieste.types import TensorType
 

@@ -51,18 +51,19 @@ class DeepGaussianProcessReparamSampler(ReparametrizationSampler):
             model is not a :class:`GPfluxPredictor`, of if its underlying ``model_gpflux`` is not a
             :class:`~gpflux.models.DeepGP`.
         """
-
-        super().__init__(sample_size)
-
         if not isinstance(model, GPfluxPredictor):
             raise ValueError(
                 f"Model must be a gpflux.interface.GPfluxPredictor, received {type(model)}"
             )
 
-        if not isinstance(model, DeepGP):
-            raise ValueError(f"GPflux model must be a gpflux.models.DeepGP, received {type(model)}")
+        super().__init__(sample_size)
 
         self._model = model
+
+        if not isinstance(self._model_gpflux, DeepGP):
+            raise ValueError(
+                f"GPflux model must be a gpflux.models.DeepGP, received {type(self._model_gpflux)}"
+            )
 
         # Each element of _eps_list is essentially a lazy constant. It is declared and assigned an
         # empty tensor here, and populated on the first call to sample
