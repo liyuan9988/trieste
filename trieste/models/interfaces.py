@@ -315,9 +315,7 @@ class HasTrajectorySampler(ProbabilisticModel, Protocol):
 class HasReparamSampler(ProbabilisticModel, Protocol):
     """A probabilistic model that has an associated reparametrization sampler."""
 
-    def reparam_sampler(
-        self: ProbabilisticModelType, num_samples: int
-    ) -> ReparametrizationSampler:
+    def reparam_sampler(self: ProbabilisticModelType, num_samples: int) -> ReparametrizationSampler:
         """
         Return a reparametrization sampler providing `num_samples` samples.
 

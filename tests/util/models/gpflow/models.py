@@ -171,18 +171,14 @@ class GaussianProcessWithoutNoise(GaussianMarginal, SupportsPredictJoint, HasRep
 class GaussianProcessWithSamplers(GaussianProcess, HasReparamSampler):
     """A (static) Gaussian process over a vector random variable with independent reparam sampler"""
 
-    def reparam_sampler(
-        self, num_samples: int
-    ) -> ReparametrizationSampler:
+    def reparam_sampler(self, num_samples: int) -> ReparametrizationSampler:
         return IndependentReparametrizationSampler(num_samples, self)
 
 
 class GaussianProcessWithBatchSamplers(GaussianProcess, HasReparamSampler):
     """A (static) Gaussian process over a vector random variable with a batch reparam sampler"""
 
-    def reparam_sampler(
-        self, num_samples: int
-    ) -> ReparametrizationSampler:
+    def reparam_sampler(self, num_samples: int) -> ReparametrizationSampler:
         return BatchReparametrizationSampler(num_samples, self)
 
 
@@ -249,9 +245,7 @@ class QuadraticMeanAndRBFKernelWithSamplers(
     def trajectory_sampler(self) -> TrajectorySampler[QuadraticMeanAndRBFKernelWithSamplers]:
         return RandomFourierFeatureTrajectorySampler(self, 100)
 
-    def reparam_sampler(
-        self, num_samples: int
-    ) -> ReparametrizationSampler:
+    def reparam_sampler(self, num_samples: int) -> ReparametrizationSampler:
         return IndependentReparametrizationSampler(num_samples, self)
 
     def get_internal_data(self) -> Dataset:
@@ -368,9 +362,7 @@ class QuadraticMeanAndRBFKernelWithBatchSamplers(
     def trajectory_sampler(self) -> TrajectorySampler[QuadraticMeanAndRBFKernelWithBatchSamplers]:
         return RandomFourierFeatureTrajectorySampler(self, 100)
 
-    def reparam_sampler(
-        self, num_samples: int
-    ) -> ReparametrizationSampler:
+    def reparam_sampler(self, num_samples: int) -> ReparametrizationSampler:
         return BatchReparametrizationSampler(num_samples, self)
 
     def get_internal_data(self) -> Dataset:
