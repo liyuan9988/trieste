@@ -654,7 +654,7 @@ def test_batch_monte_carlo_expected_hypervolume_improvement_utility_on_specified
     npt.assert_allclose(
         batch_ehvi(
             cast(
-                ReparametrizationSampler[ProbabilisticModel],
+                ReparametrizationSampler,
                 PseudoBatchReparametrizationSampler(obj_samples),
             ),
             sampler_jitter=DEFAULTS.JITTER,
