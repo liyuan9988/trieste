@@ -161,7 +161,7 @@ class GaussianProcessWithoutNoise(GaussianMarginal, SupportsPredictJoint, HasRep
 
     def reparam_sampler(
         self: GaussianProcessWithoutNoise, num_samples: int
-    ) -> ReparametrizationSampler[GaussianProcessWithoutNoise]:
+    ) -> ReparametrizationSampler:
         return IndependentReparametrizationSampler(num_samples, self)
 
     def log(self, dataset: Optional[Dataset] = None) -> None:
@@ -173,7 +173,7 @@ class GaussianProcessWithSamplers(GaussianProcess, HasReparamSampler):
 
     def reparam_sampler(
         self, num_samples: int
-    ) -> ReparametrizationSampler[GaussianProcessWithSamplers]:
+    ) -> ReparametrizationSampler:
         return IndependentReparametrizationSampler(num_samples, self)
 
 
@@ -182,7 +182,7 @@ class GaussianProcessWithBatchSamplers(GaussianProcess, HasReparamSampler):
 
     def reparam_sampler(
         self, num_samples: int
-    ) -> ReparametrizationSampler[GaussianProcessWithBatchSamplers]:
+    ) -> ReparametrizationSampler:
         return BatchReparametrizationSampler(num_samples, self)
 
 
@@ -251,7 +251,7 @@ class QuadraticMeanAndRBFKernelWithSamplers(
 
     def reparam_sampler(
         self, num_samples: int
-    ) -> ReparametrizationSampler[QuadraticMeanAndRBFKernelWithSamplers]:
+    ) -> ReparametrizationSampler:
         return IndependentReparametrizationSampler(num_samples, self)
 
     def get_internal_data(self) -> Dataset:
@@ -370,7 +370,7 @@ class QuadraticMeanAndRBFKernelWithBatchSamplers(
 
     def reparam_sampler(
         self, num_samples: int
-    ) -> ReparametrizationSampler[QuadraticMeanAndRBFKernelWithBatchSamplers]:
+    ) -> ReparametrizationSampler:
         return BatchReparametrizationSampler(num_samples, self)
 
     def get_internal_data(self) -> Dataset:

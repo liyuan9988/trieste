@@ -151,7 +151,7 @@ class GizmoModel(
 
     def reparam_sampler(
         self, num_samples: int
-    ) -> ReparametrizationSampler[GizmoModel]:
+    ) -> ReparametrizationSampler:
         raise NotImplementedError
 
     ...  # sample, update, optimize, get_observation_noise

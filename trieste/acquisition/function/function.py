@@ -894,7 +894,7 @@ class monte_carlo_expected_improvement(AcquisitionFunctionClass):
     :cite:`wilson2018maximizing` for details.
     """
 
-    def __init__(self, sampler: ReparametrizationSampler[HasReparamSampler], eta: TensorType):
+    def __init__(self, sampler: ReparametrizationSampler, eta: TensorType):
         r"""
         :param sampler: The model sampler of the objective function.
         :param eta: The "best" observation.
@@ -1035,7 +1035,7 @@ class monte_carlo_augmented_expected_improvement(AcquisitionFunctionClass):
     def __init__(
         self,
         model: SupportsReparamSamplerObservationNoise,
-        sampler: ReparametrizationSampler[SupportsReparamSamplerObservationNoise],
+        sampler: ReparametrizationSampler,
         eta: TensorType,
     ):
         r"""

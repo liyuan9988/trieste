@@ -348,7 +348,7 @@ class BatchMonteCarloExpectedHypervolumeImprovement(
 
 
 def batch_ehvi(
-    sampler: ReparametrizationSampler[HasReparamSampler],
+    sampler: ReparametrizationSampler,
     sampler_jitter: float,
     partition_bounds: tuple[TensorType, TensorType],
 ) -> AcquisitionFunction:

@@ -186,7 +186,7 @@ class GPflowPredictor(
                         dataset=dataset, model=self, prefix="training_"
                     )
 
-    def reparam_sampler(self, num_samples: int) -> ReparametrizationSampler[GPflowPredictor]:
+    def reparam_sampler(self, num_samples: int) -> ReparametrizationSampler:
         """
         Return a reparametrization sampler providing `num_samples` samples.
 

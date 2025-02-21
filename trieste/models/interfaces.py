@@ -317,7 +317,7 @@ class HasReparamSampler(ProbabilisticModel, Protocol):
 
     def reparam_sampler(
         self: ProbabilisticModelType, num_samples: int
-    ) -> ReparametrizationSampler[ProbabilisticModelType]:
+    ) -> ReparametrizationSampler:
         """
         Return a reparametrization sampler providing `num_samples` samples.
 
@@ -450,7 +450,7 @@ class HasReparamSamplerModelStack(ModelStack[HasReparamSampler], HasReparamSampl
     are the same.
     """
 
-    def reparam_sampler(self, num_samples: int) -> ReparametrizationSampler[HasReparamSampler]:
+    def reparam_sampler(self, num_samples: int) -> ReparametrizationSampler:
         """
         Return a reparameterization sampler providing `num_samples` samples across
         all the models in the model stack. This is currently only implemented for
