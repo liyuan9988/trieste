@@ -33,6 +33,7 @@ from typing import (
 import numpy as np
 import numpy.testing as npt
 import tensorflow as tf
+from tensorflow.python.autograph.impl.api import StagingError
 from typing_extensions import Final
 
 from trieste.acquisition.rule import AcquisitionRule, LocalDatasetsAcquisitionRule, SearchSpaceType
@@ -47,6 +48,7 @@ from trieste.utils import shapes_equal
 TF_DEBUGGING_ERROR_TYPES: Final[tuple[type[Exception], ...]] = (
     ValueError,
     tf.errors.InvalidArgumentError,
+    StagingError,
 )
 """ Error types thrown by TensorFlow's debugging functionality for tensor shapes. """
 
