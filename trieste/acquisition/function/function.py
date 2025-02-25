@@ -17,6 +17,7 @@ functions --- functions that estimate the utility of evaluating sets of candidat
 """
 from __future__ import annotations
 
+import math
 from typing import Callable, Mapping, Optional, cast
 
 import tensorflow as tf
@@ -223,6 +224,167 @@ class expected_improvement(AcquisitionFunctionClass):
         return (self._eta - mean) * normal.cdf(self._eta) + variance * normal.prob(self._eta)
 
 
+class LogExpectedImprovement(SingleModelAcquisitionBuilder[ProbabilisticModel]):
+    """
+    Builder for the log expected improvement function proposed by :cite: `ament2023unexpected`.
+
+    """
+
+    def __repr__(self) -> str:
+        return "LogExpectedImprovement()"
+
+    def prepare_acquisition_function(
+        self, model: ProbabilisticModel, dataset: Optional[Dataset] = None
+    ) -> AcquisitionFunction:
+        """
+        :param model: The model.
+        :param dataset: The data from the observer. Must be populated.
+        :return: The probability of improvement function. This function will raise
+            :exc:`ValueError` or :exc:`~tf.errors.InvalidArgumentError` if used with a batch size
+            greater than one.
+        :raise tf.errors.InvalidArgumentError: If ``dataset`` is empty.
+        """
+        tf.debugging.Assert(dataset is not None, [])
+        dataset = cast(Dataset, dataset)
+        tf.debugging.assert_positive(len(dataset), message="Dataset must be populated.")
+        mean, _ = model.predict(dataset.query_points)
+        eta = tf.reduce_min(mean, axis=0)[0]
+        return log_expected_improvement(model, eta)
+
+    def update_acquisition_function(
+        self,
+        function: AcquisitionFunction,
+        model: ProbabilisticModel,
+        dataset: Optional[Dataset] = None,
+    ) -> AcquisitionFunction:
+        """
+        :param function: The acquisition function to update.
+        :param model: The model.
+        :param dataset: The data from the observer.  Must be populated.
+        """
+        tf.debugging.Assert(dataset is not None, [])
+        dataset = cast(Dataset, dataset)
+        tf.debugging.assert_positive(len(dataset), message="Dataset must be populated.")
+        tf.debugging.Assert(isinstance(function, log_expected_improvement), [tf.constant([])])
+        mean, _ = model.predict(dataset.query_points)
+        eta = tf.reduce_min(mean, axis=0)[0]
+        function.update(eta)  # type: ignore
+        return function
+
+
+class log_expected_improvement(AcquisitionFunctionClass):
+    def __init__(self, model: ProbabilisticModel, eta: TensorType):
+        r"""
+        Return the Log Expected Improvement (LogEI) acquisition function for single-objective global
+        optimization. Improvement is with respect to the current "best" observation ``eta``, where
+        an improvement moves towards the objective function's minimum and the expectation is
+        calculated with respect to the ``model`` posterior. LogEI mitigates the issue of
+        Expected Improvement (EI) that it is numerically zero in many regions.
+        Although LogEI has (approximately) same optima as EI, it is much easier to optimze,
+        and empirically shows significantly improved optimization performance.
+        See :cite: `ament2023unexpected` for details.
+
+        :param model: The model of the objective function.
+        :param eta: The "best" observation.
+        :return: The expected improvement function. This function will raise
+            :exc:`ValueError` or :exc:`~tf.errors.InvalidArgumentError` if used with a batch size
+            greater than one.
+        """
+        self._model = model
+        self._eta = tf.Variable(eta)
+
+    def update(self, eta: TensorType) -> None:
+        """Update the acquisition function with a new eta value."""
+        self._eta.assign(eta)
+
+    @tf.function
+    @check_shapes(
+        "x: [N..., 1, D] # This acquisition function only supports batch sizes of one",
+        "return: [N..., L]",
+    )
+    def __call__(self, x: TensorType) -> TensorType:
+        eps = (
+            tf.constant(-1e12, dtype=tf.float64)
+            if x.dtype == tf.float64
+            else tf.constant(-1e6, dtype=tf.float32)
+        )
+        mean, variance = self._model.predict(tf.squeeze(x, -2))
+        sigma = tf.sqrt(tf.clip_by_value(variance, clip_value_min=eps, clip_value_max=x.dtype.max))
+        u = (self._eta - mean) / sigma
+
+        return _log_ei_helper(u) + tf.math.log(sigma)
+
+
+def _log_ei_helper(u: TensorType) -> TensorType:
+    """Accurately computes log(phi(u) + u * Phi(u)) in a differentiable manner for u in
+    [-10^100, 10^100] in double precision, and [-10^20, 10^20] in single precision.
+    The implementation is inspired by the BoTorch implementation
+    (https://github.com/pytorch/botorch/blob/main/botorch/acquisition/analytic.py)
+    """
+    if not (u.dtype == tf.float32 or u.dtype == tf.float64):
+        raise TypeError(
+            f"LogExpectedImprovement only supports torch.float32 and torch.float64 "
+            f"dtypes, but received {u.dtype=}."
+        )
+    # The function has two branching decisions. The first is u < bound, and in this
+    # case, just taking the logarithm of the naive _ei_helper implementation works.
+
+    bound = tf.constant(-1.0, dtype=u.dtype)
+    u_upper = tf.where(u < bound, bound, u)  # mask u to avoid NaNs in gradients
+    normal = tfp.distributions.Normal(
+        loc=tf.constant(0.0, dtype=u.dtype), scale=tf.constant(1.0, dtype=u.dtype)
+    )
+
+    log_ei_upper = tf.math.log(normal.prob(u_upper) + u_upper * normal.cdf(u_upper))
+
+    # When u <= bound, we need to be more careful and rearrange the EI formula as
+    # log(phi(u)) + log(1 - exp(w)), where w = log(abs(u) * Phi(u) / phi(u)).
+    # To this end, a second branch is necessary, depending on whether or not u is
+    # smaller than approximately the negative inverse square root of the machine
+    # precision. Below this point, numerical issues in computing log(1 - exp(w)) occur
+    # as w approaches zero from below, even though the relative contribution to log_ei
+    # vanishes in machine precision at that point.
+    neg_inv_sqrt_eps = (
+        tf.constant(-1e6, dtype=tf.float64)
+        if u.dtype == tf.float64
+        else tf.constant(-1e3, dtype=tf.float32)
+    )
+
+    # mask u for to avoid NaNs in gradients in first and second branch
+    u_lower = tf.where(u > bound, bound, u)
+    u_eps = tf.where(u < neg_inv_sqrt_eps, neg_inv_sqrt_eps, u_lower)
+    # compute the logarithm of abs(u) * Phi(u) / phi(u) for moderately large negative u
+
+    a = tf.constant(-(2**-0.5), dtype=u.dtype)
+    b = tf.constant(math.log(math.pi / 2) / 2, dtype=u.dtype)
+    w = tf.math.log(tfp.math.erfcx(a * u_eps) * tf.abs(u_eps)) + b
+
+    # 1) Now, we use a special implementation of log(1 - exp(w)) for moderately
+    # large negative numbers, and
+    # 2) capture the leading order of log(1 - exp(w)) for very large negative numbers.
+    # The second special case is technically only required for single precision numbers
+    # but does "the right thing" regardless.
+    def _log1mexp(x: TensorType) -> TensorType:
+        """Numerically accurate evaluation of log(1 - exp(x)) for x < 0.
+        See :cite:`Maechler2012accurate` for details.
+        """
+        log2 = tf.constant(math.log(2), dtype=x.dtype)
+        is_small = -log2 < x  # x < 0
+        return tf.where(is_small, tf.math.log(-tf.math.expm1(x)), tf.math.log1p(-tf.exp(x)))
+
+    log_phi_u = -tf.square(u) / 2.0 - tf.constant(math.log(2 * math.pi) / 2, dtype=u.dtype)
+    log_ei_lower = log_phi_u + (
+        tf.where(
+            u > neg_inv_sqrt_eps,
+            _log1mexp(w),
+            # The contribution of the next term relative to log_phi vanishes when
+            # w_lower << eps but captures the leading order of the log1mexp term.
+            -2 * tf.math.log(tf.abs(u_lower)),
+        )
+    )
+    return tf.where(u > bound, log_ei_upper, log_ei_lower)
+
+
 class AugmentedExpectedImprovement(SingleModelAcquisitionBuilder[SupportsGetObservationNoise]):
     """
     Builder for the augmented expected improvement function for optimization single-objective
@@ -291,7 +453,7 @@ class augmented_expected_improvement(AcquisitionFunctionClass):
         posterior predictive variance. Thus, when applying standard EI to noisy optimisation
         problems, AEI avoids getting trapped and repeatedly querying the same point.
         For model posterior :math:`f`, this is
-        .. math:: x \mapsto EI(x) * \left(1 - frac{\tau^2}{\sqrt{s^2(x)+\tau^2}}\right),
+        .. math:: x \mapsto EI(x) * \left(1 - \frac{\tau^2}{\sqrt{s^2(x)+\tau^2}}\right),
         where :math:`s^2(x)` is the predictive variance and :math:`\tau` is observation noise.
         This function was introduced by Huang et al, 2006. See :cite:`Huang:2006` for details.
 
@@ -323,6 +485,119 @@ class augmented_expected_improvement(AcquisitionFunctionClass):
             tf.math.sqrt(self._noise_variance + variance)
         )
         return ei * augmentation
+
+
+class LogAugmentedExpectedImprovement(SingleModelAcquisitionBuilder[SupportsGetObservationNoise]):
+    """
+    Builder for the log augmented expected improvement function for optimization single-objective
+    optimization problems with high levels of observation noise.
+    """
+
+    def __repr__(self) -> str:
+        """"""
+        return "LogAugmentedExpectedImprovement()"
+
+    def prepare_acquisition_function(
+        self,
+        model: SupportsGetObservationNoise,
+        dataset: Optional[Dataset] = None,
+    ) -> AcquisitionFunction:
+        """
+        :param model: The model.
+        :param dataset: The data from the observer. Must be populated.
+        :return: The expected improvement function. This function will raise
+            :exc:`ValueError` or :exc:`~tf.errors.InvalidArgumentError` if used with a batch size
+            greater than one.
+        :raise tf.errors.InvalidArgumentError: If ``dataset`` is empty.
+        """
+        if not isinstance(model, SupportsGetObservationNoise):
+            raise NotImplementedError(
+                f"AugmentedExpectedImprovement only works with models that support "
+                f"get_observation_noise; received {model!r}"
+            )
+        tf.debugging.Assert(dataset is not None, [tf.constant([])])
+        dataset = cast(Dataset, dataset)
+        tf.debugging.assert_positive(len(dataset), message="Dataset must be populated.")
+        mean, _ = model.predict(dataset.query_points)
+        eta = tf.reduce_min(mean, axis=0)
+        return log_augmented_expected_improvement(model, eta)
+
+    def update_acquisition_function(
+        self,
+        function: AcquisitionFunction,
+        model: SupportsGetObservationNoise,
+        dataset: Optional[Dataset] = None,
+    ) -> AcquisitionFunction:
+        """
+        :param function: The acquisition function to update.
+        :param model: The model.
+        :param dataset: The data from the observer. Must be populated.
+        """
+        tf.debugging.Assert(dataset is not None, [tf.constant([])])
+        dataset = cast(Dataset, dataset)
+        tf.debugging.assert_positive(len(dataset), message="Dataset must be populated.")
+        tf.debugging.Assert(isinstance(function, augmented_expected_improvement), [tf.constant([])])
+        mean, _ = model.predict(dataset.query_points)
+        eta = tf.reduce_min(mean, axis=0)
+        function.update(eta)  # type: ignore
+        return function
+
+
+class log_augmented_expected_improvement(AcquisitionFunctionClass):
+    def __init__(self, model: SupportsGetObservationNoise, eta: TensorType):
+        r"""
+        Return the logarithm of Augmented Expected Improvement (AEI) acquisition function
+        for single-objective global optimization under homoscedastic observation noise.
+        Improvement is with respect to the current "best" observation ``eta``, where an
+        improvement moves towards the objective function's minimum and the expectation is
+        calculated with respect to the ``model`` posterior.
+        This shares the same optima as original AEI but expected to be easier to optimize.
+        See
+
+        :param model: The model of the objective function.
+        :param eta: The "best" observation.
+        :return: The expected improvement function. This function will raise
+            :exc:`ValueError` or :exc:`~tf.errors.InvalidArgumentError` if used with a batch size
+            greater than one or a model without homoscedastic observation noise.
+        """
+        self._model = model
+        self._eta = tf.Variable(eta)
+        self._noise_variance = tf.Variable(model.get_observation_noise())
+
+    def update(self, eta: TensorType) -> None:
+        """Update the acquisition function with a new eta value and noise variance."""
+        self._eta.assign(eta)
+        self._noise_variance.assign(self._model.get_observation_noise())
+
+    @tf.function
+    def __call__(self, x: TensorType) -> TensorType:
+        tf.debugging.assert_shapes(
+            [(x, [..., 1, None])],
+            message="This acquisition function only supports batch sizes of one.",
+        )
+        eps = (
+            tf.constant(-1e12, dtype=tf.float64)
+            if x.dtype == tf.float64
+            else tf.constant(-1e6, dtype=tf.float32)
+        )
+        mean, variance = self._model.predict(tf.squeeze(x, -2))
+        sigma = tf.sqrt(tf.clip_by_value(variance, clip_value_min=eps, clip_value_max=x.dtype.max))
+        u = (self._eta - mean) / sigma
+        logei = _log_ei_helper(u) + tf.math.log(sigma)
+
+        """
+        It can be problematic to take the log of original augmentaiton term in AEI
+        since variance + noise_variance  can be numerically equal to noise_variance.
+        Hence, we use numerically stable version
+        """
+
+        log_augmentation = tf.math.log(variance) - tf.math.log(
+            tf.math.sqrt(variance + self._noise_variance)
+        )
+        log_augmentation = log_augmentation - tf.math.log(
+            tf.math.sqrt(variance + self._noise_variance) + tf.math.sqrt(self._noise_variance)
+        )
+        return logei + log_augmentation
 
 
 class NegativeLowerConfidenceBound(SingleModelAcquisitionBuilder[ProbabilisticModel]):
