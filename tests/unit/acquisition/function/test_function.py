@@ -52,8 +52,6 @@ from trieste.acquisition.function.function import (
     ExpectedConstrainedImprovement,
     ExpectedImprovement,
     FastConstraintsFeasibility,
-    LogAugmentedExpectedImprovement,
-    LogExpectedImprovement,
     MakePositive,
     MonteCarloAugmentedExpectedImprovement,
     MonteCarloExpectedImprovement,
@@ -417,12 +415,14 @@ def test_log_expected_improvement_builder_raises_for_empty_data() -> None:
     data = Dataset(tf.zeros([0, 1]), tf.ones([0, 1]))
 
     with pytest.raises(tf.errors.InvalidArgumentError):
-        LogExpectedImprovement().prepare_acquisition_function(
+        ExpectedImprovement(log_transform=True).prepare_acquisition_function(
             QuadraticMeanAndRBFKernel(),
             dataset=data,
         )
     with pytest.raises(tf.errors.InvalidArgumentError):
-        LogExpectedImprovement().prepare_acquisition_function(QuadraticMeanAndRBFKernel())
+        ExpectedImprovement(log_transform=True).prepare_acquisition_function(
+            QuadraticMeanAndRBFKernel()
+        )
 
 
 @pytest.mark.parametrize("at", [tf.constant([[0.0], [1.0]]), tf.constant([[[0.0], [1.0]]])])
@@ -443,7 +443,9 @@ def test_log_expected_improvement_builder_builds_log_of_expected_improvement(
     )
 
     model = QuadraticMeanAndRBFKernel(noise_variance=observation_noise)
-    acq_fn = LogExpectedImprovement().prepare_acquisition_function(model, dataset=dataset)
+    acq_fn = ExpectedImprovement(log_transform=True).prepare_acquisition_function(
+        model, dataset=dataset
+    )
 
     xs = tf.linspace([[-10.0]], [[10.0]], 100)
     ei = ExpectedImprovement().prepare_acquisition_function(model, dataset=dataset)(xs)
@@ -465,17 +467,17 @@ def test_log_expected_improvement_builder_updates_acquisition_function(
     )
     model = QuadraticMeanAndRBFKernel(noise_variance=observation_noise)
 
-    partial_data_acq_fn = LogExpectedImprovement().prepare_acquisition_function(
+    partial_data_acq_fn = ExpectedImprovement(log_transform=True).prepare_acquisition_function(
         model,
         dataset=partial_dataset,
     )
-    updated_acq_fn = LogExpectedImprovement().update_acquisition_function(
+    updated_acq_fn = ExpectedImprovement(log_transform=True).update_acquisition_function(
         partial_data_acq_fn,
         model,
         dataset=full_dataset,
     )
     assert updated_acq_fn == partial_data_acq_fn
-    full_data_acq_fn = LogExpectedImprovement().prepare_acquisition_function(
+    full_data_acq_fn = ExpectedImprovement(log_transform=True).prepare_acquisition_function(
         model, dataset=full_dataset
     )
 
@@ -487,12 +489,14 @@ def test_log_aug_expected_improvement_builder_raises_for_empty_data() -> None:
     data = Dataset(tf.zeros([0, 1]), tf.ones([0, 1]))
 
     with pytest.raises(tf.errors.InvalidArgumentError):
-        LogAugmentedExpectedImprovement().prepare_acquisition_function(
+        AugmentedExpectedImprovement(log_transform=True).prepare_acquisition_function(
             QuadraticMeanAndRBFKernel(),
             dataset=data,
         )
     with pytest.raises(tf.errors.InvalidArgumentError):
-        LogAugmentedExpectedImprovement().prepare_acquisition_function(QuadraticMeanAndRBFKernel())
+        AugmentedExpectedImprovement(log_transform=True).prepare_acquisition_function(
+            QuadraticMeanAndRBFKernel()
+        )
 
 
 @pytest.mark.parametrize("at", [tf.constant([[0.0], [1.0]]), tf.constant([[[0.0], [1.0]]])])
@@ -513,7 +517,9 @@ def test_log_aug_expected_improvement_builder_builds_log_of_aug_expected_improve
     )
 
     model = QuadraticMeanAndRBFKernel(noise_variance=observation_noise)
-    acq_fn = LogAugmentedExpectedImprovement().prepare_acquisition_function(model, dataset=dataset)
+    acq_fn = AugmentedExpectedImprovement(log_transform=True).prepare_acquisition_function(
+        model, dataset=dataset
+    )
 
     xs = tf.linspace([[-10.0]], [[10.0]], 100)
     aei = AugmentedExpectedImprovement().prepare_acquisition_function(model, dataset=dataset)(xs)
@@ -535,19 +541,21 @@ def test_log_aug_expected_improvement_builder_updates_acquisition_function(
     )
     model = QuadraticMeanAndRBFKernel(noise_variance=observation_noise)
 
-    partial_data_acq_fn = LogAugmentedExpectedImprovement().prepare_acquisition_function(
+    partial_data_acq_fn = AugmentedExpectedImprovement(
+        log_transform=True
+    ).prepare_acquisition_function(
         model,
         dataset=partial_dataset,
     )
-    updated_acq_fn = LogAugmentedExpectedImprovement().update_acquisition_function(
+    updated_acq_fn = AugmentedExpectedImprovement(log_transform=True).update_acquisition_function(
         partial_data_acq_fn,
         model,
         dataset=full_dataset,
     )
     assert updated_acq_fn == partial_data_acq_fn
-    full_data_acq_fn = LogAugmentedExpectedImprovement().prepare_acquisition_function(
-        model, dataset=full_dataset
-    )
+    full_data_acq_fn = AugmentedExpectedImprovement(
+        log_transform=True
+    ).prepare_acquisition_function(model, dataset=full_dataset)
 
     xs = tf.linspace([[-10.0]], [[10.0]], 100)
     npt.assert_allclose(updated_acq_fn(xs), full_data_acq_fn(xs))

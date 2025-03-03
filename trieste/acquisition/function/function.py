@@ -104,12 +104,14 @@ class ExpectedImprovement(SingleModelAcquisitionBuilder[ProbabilisticModel]):
     the maximum of the posterior mean at all observed points.
     """
 
-    def __init__(self, search_space: Optional[SearchSpace] = None):
+    def __init__(self, search_space: Optional[SearchSpace] = None, log_transform: bool = False):
         """
         :param search_space: The global search space over which the optimisation is defined. This is
             only used to determine explicit constraints.
+        :param log_transform: If `True`,  use logEI proposed by :cite: `ament2023unexpected`.
         """
         self._search_space = search_space
+        self._log_transform = log_transform
 
     def __repr__(self) -> str:
         """"""
@@ -149,7 +151,10 @@ class ExpectedImprovement(SingleModelAcquisitionBuilder[ProbabilisticModel]):
         else:
             eta = tf.reduce_min(mean, axis=0)
 
-        return expected_improvement(model, eta)
+        if self._log_transform:
+            return log_expected_improvement(model, eta)
+        else:
+            return expected_improvement(model, eta)
 
     def update_acquisition_function(
         self,
@@ -165,7 +170,10 @@ class ExpectedImprovement(SingleModelAcquisitionBuilder[ProbabilisticModel]):
         tf.debugging.Assert(dataset is not None, [tf.constant([])])
         dataset = cast(Dataset, dataset)
         tf.debugging.assert_positive(len(dataset), message="Dataset must be populated.")
-        tf.debugging.Assert(isinstance(function, expected_improvement), [tf.constant([])])
+        tf.debugging.Assert(
+            isinstance(function, (expected_improvement, log_expected_improvement)),
+            [tf.constant([])],
+        )
 
         # Check feasibility against any explicit constraints in the search space.
         if self._search_space is not None and self._search_space.has_constraints:
@@ -222,54 +230,6 @@ class expected_improvement(AcquisitionFunctionClass):
         mean, variance = self._model.predict(tf.squeeze(x, -2))
         normal = tfp.distributions.Normal(mean, tf.sqrt(variance))
         return (self._eta - mean) * normal.cdf(self._eta) + variance * normal.prob(self._eta)
-
-
-class LogExpectedImprovement(SingleModelAcquisitionBuilder[ProbabilisticModel]):
-    """
-    Builder for the log expected improvement function proposed by :cite: `ament2023unexpected`.
-
-    """
-
-    def __repr__(self) -> str:
-        return "LogExpectedImprovement()"
-
-    def prepare_acquisition_function(
-        self, model: ProbabilisticModel, dataset: Optional[Dataset] = None
-    ) -> AcquisitionFunction:
-        """
-        :param model: The model.
-        :param dataset: The data from the observer. Must be populated.
-        :return: The probability of improvement function. This function will raise
-            :exc:`ValueError` or :exc:`~tf.errors.InvalidArgumentError` if used with a batch size
-            greater than one.
-        :raise tf.errors.InvalidArgumentError: If ``dataset`` is empty.
-        """
-        tf.debugging.Assert(dataset is not None, [])
-        dataset = cast(Dataset, dataset)
-        tf.debugging.assert_positive(len(dataset), message="Dataset must be populated.")
-        mean, _ = model.predict(dataset.query_points)
-        eta = tf.reduce_min(mean, axis=0)[0]
-        return log_expected_improvement(model, eta)
-
-    def update_acquisition_function(
-        self,
-        function: AcquisitionFunction,
-        model: ProbabilisticModel,
-        dataset: Optional[Dataset] = None,
-    ) -> AcquisitionFunction:
-        """
-        :param function: The acquisition function to update.
-        :param model: The model.
-        :param dataset: The data from the observer.  Must be populated.
-        """
-        tf.debugging.Assert(dataset is not None, [])
-        dataset = cast(Dataset, dataset)
-        tf.debugging.assert_positive(len(dataset), message="Dataset must be populated.")
-        tf.debugging.Assert(isinstance(function, log_expected_improvement), [tf.constant([])])
-        mean, _ = model.predict(dataset.query_points)
-        eta = tf.reduce_min(mean, axis=0)[0]
-        function.update(eta)  # type: ignore
-        return function
 
 
 class log_expected_improvement(AcquisitionFunctionClass):
@@ -391,6 +351,13 @@ class AugmentedExpectedImprovement(SingleModelAcquisitionBuilder[SupportsGetObse
     optimization problems with high levels of observation noise.
     """
 
+    def __init__(self, log_transform: bool = False):
+        """
+        :param log_transform: If `True`, use logEI + log of augmented term.
+        This makes the aquisition function easier to maximize. See :cite: `ament2023unexpected`.
+        """
+        self._log_transform = log_transform
+
     def __repr__(self) -> str:
         """"""
         return "AugmentedExpectedImprovement()"
@@ -418,7 +385,11 @@ class AugmentedExpectedImprovement(SingleModelAcquisitionBuilder[SupportsGetObse
         tf.debugging.assert_positive(len(dataset), message="Dataset must be populated.")
         mean, _ = model.predict(dataset.query_points)
         eta = tf.reduce_min(mean, axis=0)
-        return augmented_expected_improvement(model, eta)
+
+        if self._log_transform:
+            return log_augmented_expected_improvement(model, eta)
+        else:
+            return augmented_expected_improvement(model, eta)
 
     def update_acquisition_function(
         self,
@@ -434,7 +405,12 @@ class AugmentedExpectedImprovement(SingleModelAcquisitionBuilder[SupportsGetObse
         tf.debugging.Assert(dataset is not None, [tf.constant([])])
         dataset = cast(Dataset, dataset)
         tf.debugging.assert_positive(len(dataset), message="Dataset must be populated.")
-        tf.debugging.Assert(isinstance(function, augmented_expected_improvement), [tf.constant([])])
+        tf.debugging.Assert(
+            isinstance(
+                function, (augmented_expected_improvement, log_augmented_expected_improvement)
+            ),
+            [tf.constant([])],
+        )
         mean, _ = model.predict(dataset.query_points)
         eta = tf.reduce_min(mean, axis=0)
         function.update(eta)  # type: ignore
@@ -485,64 +461,6 @@ class augmented_expected_improvement(AcquisitionFunctionClass):
             tf.math.sqrt(self._noise_variance + variance)
         )
         return ei * augmentation
-
-
-class LogAugmentedExpectedImprovement(SingleModelAcquisitionBuilder[SupportsGetObservationNoise]):
-    """
-    Builder for the log augmented expected improvement function for optimization single-objective
-    optimization problems with high levels of observation noise.
-    """
-
-    def __repr__(self) -> str:
-        """"""
-        return "LogAugmentedExpectedImprovement()"
-
-    def prepare_acquisition_function(
-        self,
-        model: SupportsGetObservationNoise,
-        dataset: Optional[Dataset] = None,
-    ) -> AcquisitionFunction:
-        """
-        :param model: The model.
-        :param dataset: The data from the observer. Must be populated.
-        :return: The expected improvement function. This function will raise
-            :exc:`ValueError` or :exc:`~tf.errors.InvalidArgumentError` if used with a batch size
-            greater than one.
-        :raise tf.errors.InvalidArgumentError: If ``dataset`` is empty.
-        """
-        if not isinstance(model, SupportsGetObservationNoise):
-            raise NotImplementedError(
-                f"AugmentedExpectedImprovement only works with models that support "
-                f"get_observation_noise; received {model!r}"
-            )
-        tf.debugging.Assert(dataset is not None, [tf.constant([])])
-        dataset = cast(Dataset, dataset)
-        tf.debugging.assert_positive(len(dataset), message="Dataset must be populated.")
-        mean, _ = model.predict(dataset.query_points)
-        eta = tf.reduce_min(mean, axis=0)
-        return log_augmented_expected_improvement(model, eta)
-
-    def update_acquisition_function(
-        self,
-        function: AcquisitionFunction,
-        model: SupportsGetObservationNoise,
-        dataset: Optional[Dataset] = None,
-    ) -> AcquisitionFunction:
-        """
-        :param function: The acquisition function to update.
-        :param model: The model.
-        :param dataset: The data from the observer. Must be populated.
-        """
-        tf.debugging.Assert(dataset is not None, [tf.constant([])])
-        dataset = cast(Dataset, dataset)
-        tf.debugging.assert_positive(len(dataset), message="Dataset must be populated.")
-        tf.debugging.Assert(
-            isinstance(function, log_augmented_expected_improvement), [tf.constant([])]
-        )
-        mean, _ = model.predict(dataset.query_points)
-        eta = tf.reduce_min(mean, axis=0)
-        function.update(eta)  # type: ignore
-        return function
 
 
 class log_augmented_expected_improvement(AcquisitionFunctionClass):
