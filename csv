@@ -1,2 +1,0 @@
-epoch,loss,model_0_output_loss,model_0_output_mse,model_1_output_loss,model_1_output_mse,val_loss,val_model_0_output_loss,val_model_0_output_mse,val_model_1_output_loss,val_model_1_output_mse
-0,7.0391340255737305,3.427996873855591,0.6232233047485352,3.611137866973877,0.35890308022499084,NA,NA,NA,NA,NA
