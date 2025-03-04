@@ -326,7 +326,7 @@ def _log_ei_helper(u: TensorType) -> TensorType:
     # but does "the right thing" regardless.
     def _log1mexp(x: TensorType) -> TensorType:
         """Numerically accurate evaluation of log(1 - exp(x)) for x < 0.
-        See :cite:`Maechler2012accurate` for details.
+        See Rmpfr package for details.
         """
         log2 = tf.constant(math.log(2), dtype=x.dtype)
         is_small = -log2 < x  # x < 0
