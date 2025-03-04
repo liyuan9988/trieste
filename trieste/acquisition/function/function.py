@@ -108,7 +108,7 @@ class ExpectedImprovement(SingleModelAcquisitionBuilder[ProbabilisticModel]):
         """
         :param search_space: The global search space over which the optimisation is defined. This is
             only used to determine explicit constraints.
-        :param log_transform: If `True`,  use logEI proposed by :cite: `ament2023unexpected`.
+        :param log_transform: If `True`,  use logEI proposed by :cite:`ament2023unexpected`.
         """
         self._search_space = search_space
         self._log_transform = log_transform
@@ -354,7 +354,7 @@ class AugmentedExpectedImprovement(SingleModelAcquisitionBuilder[SupportsGetObse
     def __init__(self, log_transform: bool = False):
         """
         :param log_transform: If `True`, use logEI + log of augmented term.
-        This makes the aquisition function easier to maximize. See :cite: `ament2023unexpected`.
+            This makes the aquisition function easier to maximize. See :cite: `ament2023unexpected`.
         """
         self._log_transform = log_transform
 
