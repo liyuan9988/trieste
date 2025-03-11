@@ -202,3 +202,46 @@ def add_fidelity_column(query_points: TensorType, fidelity: int) -> TensorType:
     fidelity_col = tf.ones((tf.shape(query_points)[-2], 1), dtype=query_points.dtype) * fidelity
     query_points_for_fidelity = tf.concat([query_points, fidelity_col], axis=-1)
     return query_points_for_fidelity
+
+
+def split_dataset_randomly(
+    dataset: Dataset, proportion: float, seed: Optional[int] = None
+) -> tuple[Dataset, Dataset]:
+    """Split dataset randomly into two parts according to the specified proportion.
+
+    :param dataset: Dataset to split.
+    :param proportion: Proportion of data to include in first dataset (between 0 and 1).
+    :param seed: Optional random seed for reproducibility.
+    :return: Tuple of two datasets, where first contains approximately proportion * len(dataset)
+        points.
+    :raise ValueError: If proportion is not between 0 and 1
+    """
+    if not 0 <= proportion <= 1:
+        raise ValueError(f"proportion must be between 0 and 1, got {proportion}")
+
+    if len(dataset) == 0:
+        return dataset, dataset
+
+    if seed is not None:  # ensure reproducibility
+        tf.random.set_seed(seed)
+
+    # Generate random permutation of indices
+    num_points = len(dataset)
+    indices = tf.random.shuffle(tf.range(num_points), seed=seed)
+
+    # Split indices according to proportion
+    split_idx = tf.cast(tf.math.floor(tf.cast(num_points, tf.float32) * proportion), tf.int32)
+    first_indices = indices[:split_idx]
+    second_indices = indices[split_idx:]
+
+    # Create new datasets using the split indices
+    first_dataset = Dataset(
+        tf.gather(dataset.query_points, first_indices),
+        tf.gather(dataset.observations, first_indices),
+    )
+    second_dataset = Dataset(
+        tf.gather(dataset.query_points, second_indices),
+        tf.gather(dataset.observations, second_indices),
+    )
+
+    return first_dataset, second_dataset

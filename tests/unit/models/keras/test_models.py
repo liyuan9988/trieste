@@ -608,6 +608,43 @@ def test_deep_ensemble_prepare_data_call(
         assert tf.reduce_all(inputs[member_data] == x)
 
 
+@pytest.mark.parametrize("do_not_bootstrap", [True, False])
+def test_deep_ensemble_prepare_data_bootstrap_combinations(do_not_bootstrap: bool) -> None:
+    """Test all combinations of bootstrap and do_not_bootstrap arguments."""
+    n_rows = 100
+    x = tf.constant(np.arange(0, n_rows, 1), shape=[n_rows, 1], dtype=tf.float32)
+    y = tf.constant(np.arange(0, n_rows, 1), shape=[n_rows, 1], dtype=tf.float32)
+    example_data = Dataset(x, y)
+
+    # Test with bootstrap=True
+    model_with_bootstrap, _, _ = trieste_deep_ensemble_model(
+        example_data, _ENSEMBLE_SIZE, True, diversify=False
+    )
+    data = model_with_bootstrap.prepare_dataset(example_data, do_not_bootstrap=do_not_bootstrap)
+
+    if do_not_bootstrap:
+        # Should not bootstrap even though model has bootstrap=True
+        assert all(
+            tf.reduce_all(data[0][member_data] == x) for member_data in data[0]
+        ), "Expected non-bootstrapped data when do_not_bootstrap=True"
+    else:
+        # Should bootstrap since model has bootstrap=True
+        assert any(
+            tf.reduce_any(data[0][member_data] != x) for member_data in data[0]
+        ), "Expected bootstrapped data when do_not_bootstrap=False"
+
+    # Test with bootstrap=False
+    model_without_bootstrap, _, _ = trieste_deep_ensemble_model(
+        example_data, _ENSEMBLE_SIZE, False, diversify=False
+    )
+    data = model_without_bootstrap.prepare_dataset(example_data, do_not_bootstrap=do_not_bootstrap)
+
+    # Should never bootstrap since model has bootstrap=False
+    assert all(
+        tf.reduce_all(data[0][member_data] == x) for member_data in data[0]
+    ), "Expected non-bootstrapped data when model bootstrap=False"
+
+
 def test_deep_ensemble_deep_copyable() -> None:
     example_data = _get_example_data([10, 3], [10, 3])
     model, _, _ = trieste_deep_ensemble_model(example_data, 2, False, False)

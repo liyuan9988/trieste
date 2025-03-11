@@ -206,7 +206,7 @@ class DeepEnsemble(
         return self._model.num_outputs
 
     def prepare_dataset(
-        self, dataset: Dataset
+        self, dataset: Dataset, do_not_bootstrap: bool = False
     ) -> tuple[Dict[str, TensorType], Dict[str, TensorType]]:
         """
         Transform ``dataset`` into inputs and outputs with correct names that can be used for
@@ -217,12 +217,14 @@ class DeepEnsemble(
         each network in the ensemble.
 
         :param dataset: A dataset with ``query_points`` and ``observations`` tensors.
+        :param do_not_bootstrap: If True, do not bootstrap the data, even if the model is set to
+            bootstrap. This can be useful for preparing validation data.
         :return: A dictionary with input data and a dictionary with output data.
         """
         inputs = {}
         outputs = {}
         for index in range(self.ensemble_size):
-            if self._bootstrap:
+            if self._bootstrap and not do_not_bootstrap:
                 resampled_data = sample_with_replacement(dataset)
             else:
                 resampled_data = dataset

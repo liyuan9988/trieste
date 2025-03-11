@@ -64,6 +64,7 @@ def trieste_deep_ensemble_model(
     ensemble_size: int,
     bootstrap_data: bool = False,
     independent_normal: bool = False,
+    diversify: bool = False,
     compile_args: Optional[Mapping[str, Any]] = None,
 ) -> Tuple[DeepEnsemble, KerasEnsemble, KerasOptimizer]:
     keras_ensemble = trieste_keras_ensemble_model(example_data, ensemble_size, independent_normal)
@@ -78,7 +79,11 @@ def trieste_deep_ensemble_model(
     optimizer_wrapper = KerasOptimizer(optimizer, fit_args)
 
     model = DeepEnsemble(
-        keras_ensemble, optimizer_wrapper, bootstrap_data, compile_args=compile_args
+        keras_ensemble,
+        optimizer_wrapper,
+        bootstrap_data,
+        diversify=diversify,
+        compile_args=compile_args,
     )
 
     return model, keras_ensemble, optimizer_wrapper
