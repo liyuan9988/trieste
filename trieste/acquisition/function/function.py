@@ -232,10 +232,6 @@ class expected_improvement(AcquisitionFunctionClass):
 class log_expected_improvement(expected_improvement):
 
     @tf.function
-    @check_shapes(
-        "x: [N..., 1, D] # This acquisition function only supports batch sizes of one",
-        "return: [N..., L]",
-    )
     def __call__(self, x: TensorType) -> TensorType:
         r"""
         Return the Log Expected Improvement (LogEI) acquisition function for single-objective global
@@ -253,6 +249,10 @@ class log_expected_improvement(expected_improvement):
             :exc:`ValueError` or :exc:`~tf.errors.InvalidArgumentError` if used with a batch size
             greater than one.
         """
+        tf.debugging.assert_shapes(
+            [(x, [..., 1, None])],
+            message="This acquisition function only supports batch sizes of one.",
+        )
         eps = (
             tf.constant(-1e12, dtype=tf.float64)
             if x.dtype == tf.float64
