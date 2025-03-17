@@ -115,12 +115,12 @@ def GPR_OPTIMIZER_PARAMS() -> Tuple[str, List[ParameterSet]]:
             pytest.param(
                 30,
                 EfficientGlobalOptimization(LogExpectedImprovement().using(OBJECTIVE)),
-                id="AugmentedExpectedImprovement",
+                id="LogExpectedImprovement",
             ),
             pytest.param(
                 30,
                 EfficientGlobalOptimization(LogAugmentedExpectedImprovement().using(OBJECTIVE)),
-                id="AugmentedExpectedImprovement",
+                id="LogAugmentedExpectedImprovement",
             ),
             pytest.param(
                 20,
