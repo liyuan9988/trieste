@@ -349,7 +349,7 @@ class AugmentedExpectedImprovement(SingleModelAcquisitionBuilder[SupportsGetObse
     optimization problems with high levels of observation noise.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._acq_function_cls = augmented_expected_improvement
 
     def __repr__(self) -> str:
@@ -455,7 +455,7 @@ class LogAugmentedExpectedImprovement(AugmentedExpectedImprovement):
     optimization problems with high levels of observation noise.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._acq_function_cls = log_augmented_expected_improvement
 
     def __repr__(self) -> str:
