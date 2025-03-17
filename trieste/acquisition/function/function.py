@@ -170,10 +170,7 @@ class ExpectedImprovement(SingleModelAcquisitionBuilder[ProbabilisticModel]):
         tf.debugging.Assert(dataset is not None, [tf.constant([])])
         dataset = cast(Dataset, dataset)
         tf.debugging.assert_positive(len(dataset), message="Dataset must be populated.")
-        tf.debugging.Assert(
-            isinstance(function, (expected_improvement, log_expected_improvement)),
-            [tf.constant([])],
-        )
+        tf.debugging.Assert(isinstance(function, expected_improvement), [tf.constant([])])
 
         # Check feasibility against any explicit constraints in the search space.
         if self._search_space is not None and self._search_space.has_constraints:
@@ -232,8 +229,14 @@ class expected_improvement(AcquisitionFunctionClass):
         return (self._eta - mean) * normal.cdf(self._eta) + variance * normal.prob(self._eta)
 
 
-class log_expected_improvement(AcquisitionFunctionClass):
-    def __init__(self, model: ProbabilisticModel, eta: TensorType):
+class log_expected_improvement(expected_improvement):
+
+    @tf.function
+    @check_shapes(
+        "x: [N..., 1, D] # This acquisition function only supports batch sizes of one",
+        "return: [N..., L]",
+    )
+    def __call__(self, x: TensorType) -> TensorType:
         r"""
         Return the Log Expected Improvement (LogEI) acquisition function for single-objective global
         optimization. Improvement is with respect to the current "best" observation ``eta``, where
@@ -250,19 +253,6 @@ class log_expected_improvement(AcquisitionFunctionClass):
             :exc:`ValueError` or :exc:`~tf.errors.InvalidArgumentError` if used with a batch size
             greater than one.
         """
-        self._model = model
-        self._eta = tf.Variable(eta)
-
-    def update(self, eta: TensorType) -> None:
-        """Update the acquisition function with a new eta value."""
-        self._eta.assign(eta)
-
-    @tf.function
-    @check_shapes(
-        "x: [N..., 1, D] # This acquisition function only supports batch sizes of one",
-        "return: [N..., L]",
-    )
-    def __call__(self, x: TensorType) -> TensorType:
         eps = (
             tf.constant(-1e12, dtype=tf.float64)
             if x.dtype == tf.float64
@@ -405,12 +395,7 @@ class AugmentedExpectedImprovement(SingleModelAcquisitionBuilder[SupportsGetObse
         tf.debugging.Assert(dataset is not None, [tf.constant([])])
         dataset = cast(Dataset, dataset)
         tf.debugging.assert_positive(len(dataset), message="Dataset must be populated.")
-        tf.debugging.Assert(
-            isinstance(
-                function, (augmented_expected_improvement, log_augmented_expected_improvement)
-            ),
-            [tf.constant([])],
-        )
+        tf.debugging.Assert(isinstance(function, augmented_expected_improvement), [tf.constant([])])
         mean, _ = model.predict(dataset.query_points)
         eta = tf.reduce_min(mean, axis=0)
         function.update(eta)  # type: ignore
@@ -463,8 +448,10 @@ class augmented_expected_improvement(AcquisitionFunctionClass):
         return ei * augmentation
 
 
-class log_augmented_expected_improvement(AcquisitionFunctionClass):
-    def __init__(self, model: SupportsGetObservationNoise, eta: TensorType):
+class log_augmented_expected_improvement(augmented_expected_improvement):
+
+    @tf.function
+    def __call__(self, x: TensorType) -> TensorType:
         r"""
         Return the logarithm of Augmented Expected Improvement (AEI) acquisition function
         for single-objective global optimization under homoscedastic observation noise.
@@ -472,25 +459,13 @@ class log_augmented_expected_improvement(AcquisitionFunctionClass):
         improvement moves towards the objective function's minimum and the expectation is
         calculated with respect to the ``model`` posterior.
         This shares the same optima as original AEI but expected to be easier to optimize.
-        See
 
-        :param model: The model of the objective function.
-        :param eta: The "best" observation.
-        :return: The expected improvement function. This function will raise
-            :exc:`ValueError` or :exc:`~tf.errors.InvalidArgumentError` if used with a batch size
-            greater than one or a model without homoscedastic observation noise.
+
+        It can be problematic to take the log of original augmentaiton term in AEI
+        since variance + noise_variance  can be numerically equal to noise_variance.
+        Hence, we use numerically stable version
         """
-        self._model = model
-        self._eta = tf.Variable(eta)
-        self._noise_variance = tf.Variable(model.get_observation_noise())
 
-    def update(self, eta: TensorType) -> None:
-        """Update the acquisition function with a new eta value and noise variance."""
-        self._eta.assign(eta)
-        self._noise_variance.assign(self._model.get_observation_noise())
-
-    @tf.function
-    def __call__(self, x: TensorType) -> TensorType:
         tf.debugging.assert_shapes(
             [(x, [..., 1, None])],
             message="This acquisition function only supports batch sizes of one.",
@@ -505,17 +480,10 @@ class log_augmented_expected_improvement(AcquisitionFunctionClass):
         u = (self._eta - mean) / sigma
         logei = _log_ei_helper(u) + tf.math.log(sigma)
 
-        """
-        It can be problematic to take the log of original augmentaiton term in AEI
-        since variance + noise_variance  can be numerically equal to noise_variance.
-        Hence, we use numerically stable version
-        """
-
-        log_augmentation = tf.math.log(variance) - tf.math.log(
-            tf.math.sqrt(variance + self._noise_variance)
-        )
+        total_std = tf.math.sqrt(variance + self._noise_variance)
+        log_augmentation = tf.math.log(variance) - tf.math.log(total_std)
         log_augmentation = log_augmentation - tf.math.log(
-            tf.math.sqrt(variance + self._noise_variance) + tf.math.sqrt(self._noise_variance)
+            total_std + tf.math.sqrt(self._noise_variance)
         )
         return logei + log_augmentation
 
