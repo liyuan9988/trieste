@@ -105,14 +105,14 @@ class ExpectedImprovement(SingleModelAcquisitionBuilder[ProbabilisticModel]):
     the maximum of the posterior mean at all observed points.
     """
 
-    def __init__(self, search_space: Optional[SearchSpace] = None, log_transform: bool = False):
+    def __init__(self, search_space: Optional[SearchSpace] = None):
         """
         :param search_space: The global search space over which the optimisation is defined. This is
             only used to determine explicit constraints.
         :param log_transform: If `True`,  use logEI proposed by :cite:`ament2023unexpected`.
         """
         self._search_space = search_space
-        self._log_transform = log_transform
+        self._acq_function_cls = expected_improvement
 
     def __repr__(self) -> str:
         """"""
@@ -152,10 +152,7 @@ class ExpectedImprovement(SingleModelAcquisitionBuilder[ProbabilisticModel]):
         else:
             eta = tf.reduce_min(mean, axis=0)
 
-        if self._log_transform:
-            return log_expected_improvement(model, eta)
-        else:
-            return expected_improvement(model, eta)
+        return self._acq_function_cls(model, eta)
 
     def update_acquisition_function(
         self,
@@ -171,7 +168,7 @@ class ExpectedImprovement(SingleModelAcquisitionBuilder[ProbabilisticModel]):
         tf.debugging.Assert(dataset is not None, [tf.constant([])])
         dataset = cast(Dataset, dataset)
         tf.debugging.assert_positive(len(dataset), message="Dataset must be populated.")
-        tf.debugging.Assert(isinstance(function, expected_improvement), [tf.constant([])])
+        tf.debugging.Assert(isinstance(function, self._acq_function_cls), [tf.constant([])])
 
         # Check feasibility against any explicit constraints in the search space.
         if self._search_space is not None and self._search_space.has_constraints:
@@ -229,6 +226,24 @@ class expected_improvement(AcquisitionFunctionClass):
         normal = tfp.distributions.Normal(mean, tf.sqrt(variance))
         return (self._eta - mean) * normal.cdf(self._eta) + variance * normal.prob(self._eta)
 
+class LogExpectedImprovement(ExpectedImprovement):
+    """
+    Builder for the log expected improvement function.
+    """
+
+    def __init__(self, search_space: Optional[SearchSpace] = None):
+        """
+        :param search_space: The global search space over which the optimisation is defined. This is
+            only used to determine explicit constraints.
+        """
+        self._search_space = search_space
+        self._acq_function_cls = log_expected_improvement
+    
+    def __repr__(self) -> str:
+        """"""
+        return f"LogExpectedImprovement({self._search_space!r})"
+
+
 
 class log_expected_improvement(expected_improvement):
 
@@ -258,20 +273,20 @@ class log_expected_improvement(expected_improvement):
         sigma = tf.sqrt(ensure_positive(variance))
         u = (self._eta - mean) / sigma
 
-        return _log_ei_helper(u) + tf.math.log(sigma)
+        return log_ei_helper(u) + tf.math.log(sigma)
 
 
-def _log_ei_helper(u: TensorType) -> TensorType:
+def log_ei_helper(u: TensorType) -> TensorType:
     """Accurately computes log(phi(u) + u * Phi(u)) in a differentiable manner for u in
     [-10^100, 10^100] in double precision, and [-10^20, 10^20] in single precision.
     The implementation is inspired by the BoTorch implementation
     (https://github.com/pytorch/botorch/blob/main/botorch/acquisition/analytic.py)
     """
-    if not (u.dtype == tf.float32 or u.dtype == tf.float64):
-        raise TypeError(
-            f"LogExpectedImprovement only supports torch.float32 and torch.float64 "
-            f"dtypes, but received {u.dtype=}."
-        )
+    tf.debugging.Assert(
+        condition=u.dtype == tf.float32 or u.dtype == tf.float64,
+        data=[u]
+    )
+    
     # The function has two branching decisions. The first is u < bound, and in this
     # case, just taking the logarithm of the naive _ei_helper implementation works.
 
@@ -337,12 +352,9 @@ class AugmentedExpectedImprovement(SingleModelAcquisitionBuilder[SupportsGetObse
     optimization problems with high levels of observation noise.
     """
 
-    def __init__(self, log_transform: bool = False):
-        """
-        :param log_transform: If `True`, use logEI + log of augmented term.
-            This makes the aquisition function easier to maximize. See :cite: `ament2023unexpected`.
-        """
-        self._log_transform = log_transform
+    def __init__(self):
+        self._acq_function_cls = augmented_expected_improvement
+    
 
     def __repr__(self) -> str:
         """"""
@@ -372,10 +384,7 @@ class AugmentedExpectedImprovement(SingleModelAcquisitionBuilder[SupportsGetObse
         mean, _ = model.predict(dataset.query_points)
         eta = tf.reduce_min(mean, axis=0)
 
-        if self._log_transform:
-            return log_augmented_expected_improvement(model, eta)
-        else:
-            return augmented_expected_improvement(model, eta)
+        return self._acq_function_cls(model, eta)
 
     def update_acquisition_function(
         self,
@@ -391,7 +400,7 @@ class AugmentedExpectedImprovement(SingleModelAcquisitionBuilder[SupportsGetObse
         tf.debugging.Assert(dataset is not None, [tf.constant([])])
         dataset = cast(Dataset, dataset)
         tf.debugging.assert_positive(len(dataset), message="Dataset must be populated.")
-        tf.debugging.Assert(isinstance(function, augmented_expected_improvement), [tf.constant([])])
+        tf.debugging.Assert(isinstance(function, self._acq_function_cls), [tf.constant([])])
         mean, _ = model.predict(dataset.query_points)
         eta = tf.reduce_min(mean, axis=0)
         function.update(eta)  # type: ignore
@@ -443,6 +452,20 @@ class augmented_expected_improvement(AcquisitionFunctionClass):
         )
         return ei * augmentation
 
+class LogAugmentedExpectedImprovement(AugmentedExpectedImprovement):
+    """
+    Builder for the augmented expected improvement function for optimization single-objective
+    optimization problems with high levels of observation noise.
+    """
+
+    def __init__(self):
+        self._acq_function_cls = log_augmented_expected_improvement
+    
+
+    def __repr__(self) -> str:
+        """"""
+        return "LogAugmentedExpectedImprovement()"
+
 
 class log_augmented_expected_improvement(augmented_expected_improvement):
 
@@ -468,9 +491,10 @@ class log_augmented_expected_improvement(augmented_expected_improvement):
         )
 
         mean, variance = self._model.predict(tf.squeeze(x, -2))
+        variance = ensure_positive(variance)
         sigma = tf.sqrt(ensure_positive(variance))
         u = (self._eta - mean) / sigma
-        logei = _log_ei_helper(u) + tf.math.log(sigma)
+        logei = log_ei_helper(u) + tf.math.log(sigma)
 
         total_std = tf.math.sqrt(variance + self._noise_variance)
         log_augmentation = tf.math.log(variance) - tf.math.log(total_std)
