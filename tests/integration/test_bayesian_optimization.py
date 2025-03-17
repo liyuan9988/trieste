@@ -38,6 +38,8 @@ from trieste.acquisition import (
     GreedyAcquisitionFunctionBuilder,
     GreedyContinuousThompsonSampling,
     LocalPenalization,
+    LogAugmentedExpectedImprovement,
+    LogExpectedImprovement,
     MinValueEntropySearch,
     MonteCarloAugmentedExpectedImprovement,
     MonteCarloExpectedImprovement,
@@ -108,6 +110,16 @@ def GPR_OPTIMIZER_PARAMS() -> Tuple[str, List[ParameterSet]]:
             pytest.param(
                 30,
                 EfficientGlobalOptimization(AugmentedExpectedImprovement().using(OBJECTIVE)),
+                id="AugmentedExpectedImprovement",
+            ),
+            pytest.param(
+                30,
+                EfficientGlobalOptimization(LogExpectedImprovement().using(OBJECTIVE)),
+                id="AugmentedExpectedImprovement",
+            ),
+            pytest.param(
+                30,
+                EfficientGlobalOptimization(LogAugmentedExpectedImprovement().using(OBJECTIVE)),
                 id="AugmentedExpectedImprovement",
             ),
             pytest.param(
