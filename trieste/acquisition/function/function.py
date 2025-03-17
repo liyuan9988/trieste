@@ -226,6 +226,7 @@ class expected_improvement(AcquisitionFunctionClass):
         normal = tfp.distributions.Normal(mean, tf.sqrt(variance))
         return (self._eta - mean) * normal.cdf(self._eta) + variance * normal.prob(self._eta)
 
+
 class LogExpectedImprovement(ExpectedImprovement):
     """
     Builder for the log expected improvement function.
@@ -238,11 +239,10 @@ class LogExpectedImprovement(ExpectedImprovement):
         """
         self._search_space = search_space
         self._acq_function_cls = log_expected_improvement
-    
+
     def __repr__(self) -> str:
         """"""
         return f"LogExpectedImprovement({self._search_space!r})"
-
 
 
 class log_expected_improvement(expected_improvement):
@@ -282,11 +282,8 @@ def log_ei_helper(u: TensorType) -> TensorType:
     The implementation is inspired by the BoTorch implementation
     (https://github.com/pytorch/botorch/blob/main/botorch/acquisition/analytic.py)
     """
-    tf.debugging.Assert(
-        condition=u.dtype == tf.float32 or u.dtype == tf.float64,
-        data=[u]
-    )
-    
+    tf.debugging.Assert(condition=(u.dtype == tf.float32 or u.dtype == tf.float64), data=[u])
+
     # The function has two branching decisions. The first is u < bound, and in this
     # case, just taking the logarithm of the naive _ei_helper implementation works.
 
@@ -354,7 +351,6 @@ class AugmentedExpectedImprovement(SingleModelAcquisitionBuilder[SupportsGetObse
 
     def __init__(self):
         self._acq_function_cls = augmented_expected_improvement
-    
 
     def __repr__(self) -> str:
         """"""
@@ -452,6 +448,7 @@ class augmented_expected_improvement(AcquisitionFunctionClass):
         )
         return ei * augmentation
 
+
 class LogAugmentedExpectedImprovement(AugmentedExpectedImprovement):
     """
     Builder for the augmented expected improvement function for optimization single-objective
@@ -460,7 +457,6 @@ class LogAugmentedExpectedImprovement(AugmentedExpectedImprovement):
 
     def __init__(self):
         self._acq_function_cls = log_augmented_expected_improvement
-    
 
     def __repr__(self) -> str:
         """"""
