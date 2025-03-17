@@ -34,6 +34,7 @@ from ...models.interfaces import (
 from ...space import SearchSpace
 from ...types import Tag, TensorType
 from ...utils import DEFAULTS
+from ...utils.misc import ensure_positive
 from ..interface import (
     AcquisitionFunction,
     AcquisitionFunctionBuilder,
@@ -253,13 +254,8 @@ class log_expected_improvement(expected_improvement):
             [(x, [..., 1, None])],
             message="This acquisition function only supports batch sizes of one.",
         )
-        eps = (
-            tf.constant(-1e12, dtype=tf.float64)
-            if x.dtype == tf.float64
-            else tf.constant(-1e6, dtype=tf.float32)
-        )
         mean, variance = self._model.predict(tf.squeeze(x, -2))
-        sigma = tf.sqrt(tf.clip_by_value(variance, clip_value_min=eps, clip_value_max=x.dtype.max))
+        sigma = tf.sqrt(ensure_positive(variance))
         u = (self._eta - mean) / sigma
 
         return _log_ei_helper(u) + tf.math.log(sigma)
@@ -470,13 +466,9 @@ class log_augmented_expected_improvement(augmented_expected_improvement):
             [(x, [..., 1, None])],
             message="This acquisition function only supports batch sizes of one.",
         )
-        eps = (
-            tf.constant(-1e12, dtype=tf.float64)
-            if x.dtype == tf.float64
-            else tf.constant(-1e6, dtype=tf.float32)
-        )
+
         mean, variance = self._model.predict(tf.squeeze(x, -2))
-        sigma = tf.sqrt(tf.clip_by_value(variance, clip_value_min=eps, clip_value_max=x.dtype.max))
+        sigma = tf.sqrt(ensure_positive(variance))
         u = (self._eta - mean) / sigma
         logei = _log_ei_helper(u) + tf.math.log(sigma)
 
