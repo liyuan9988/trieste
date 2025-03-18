@@ -54,6 +54,8 @@ from .function import (
     GreedyContinuousThompsonSampling,
     IntegratedVarianceReduction,
     LocalPenalization,
+    LogAugmentedExpectedImprovement,
+    LogExpectedImprovement,
     MakePositive,
     MinValueEntropySearch,
     MonteCarloAugmentedExpectedImprovement,
