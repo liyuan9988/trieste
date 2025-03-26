@@ -18,7 +18,7 @@ functions --- functions that estimate the utility of evaluating sets of candidat
 from __future__ import annotations
 
 import math
-from typing import Callable, Mapping, Optional, cast
+from typing import Callable, Mapping, Optional, Type, cast
 
 import tensorflow as tf
 import tensorflow_probability as tfp
@@ -109,14 +109,16 @@ class ExpectedImprovement(SingleModelAcquisitionBuilder[ProbabilisticModel]):
         """
         :param search_space: The global search space over which the optimisation is defined. This is
             only used to determine explicit constraints.
-        :param log_transform: If `True`,  use logEI proposed by :cite:`ament2023unexpected`.
         """
         self._search_space = search_space
-        self._acq_function_cls = expected_improvement
 
     def __repr__(self) -> str:
         """"""
-        return f"ExpectedImprovement({self._search_space!r})"
+        return f"{self.__class__.__name__}({self._search_space!r})"
+
+    @property
+    def _acq_function_cls(self) -> Type[expected_improvement]:
+        return expected_improvement
 
     def prepare_acquisition_function(
         self,
@@ -229,42 +231,42 @@ class expected_improvement(AcquisitionFunctionClass):
 
 class LogExpectedImprovement(ExpectedImprovement):
     """
-    Builder for the log expected improvement function.
+    Builder for the log expected improvement function where the "best" value is
+    taken to be the minimum of the posterior mean at observed points.
+    This improves the original EI implementation by mitigating
+    the gradient vanishing isuue. See :py:class:`log_expected_improvement` for details.
+
+    Similar to :py:class:`ExpectedImprovement`, in the presence of
+    constraints in the search_space the "best" value is computed only at the feasible
+    query points. If there are no feasible points, the "best" value is instead taken
+    to be the maximum of the posterior mean at all observed points.
     """
 
-    def __init__(self, search_space: Optional[SearchSpace] = None):
-        """
-        :param search_space: The global search space over which the optimisation is defined. This is
-            only used to determine explicit constraints.
-        """
-        self._search_space = search_space
-        self._acq_function_cls = log_expected_improvement
-
-    def __repr__(self) -> str:
-        """"""
-        return f"LogExpectedImprovement({self._search_space!r})"
+    @property
+    def _acq_function_cls(self) -> Type[expected_improvement]:
+        return log_expected_improvement
 
 
 class log_expected_improvement(expected_improvement):
+    r"""
+    Return the Log Expected Improvement (LogEI) acquisition function for single-objective global
+    optimization. Improvement is with respect to the current "best" observation ``eta``, where
+    an improvement moves towards the objective function's minimum and the expectation is
+    calculated with respect to the ``model`` posterior. LogEI mitigates the issue of
+    Expected Improvement (EI) that it is numerically zero in many regions.
+    Although LogEI has (approximately) same optima as EI, it is much easier to optimze,
+    and empirically shows significantly improved optimization performance.
+    See :cite: `ament2023unexpected` for details.
+
+    :param model: The model of the objective function.
+    :param eta: The "best" observation.
+    :return: The expected improvement function. This function will raise
+        :exc:`ValueError` or :exc:`~tf.errors.InvalidArgumentError` if used with a batch size
+        greater than one.
+    """
 
     @tf.function
     def __call__(self, x: TensorType) -> TensorType:
-        r"""
-        Return the Log Expected Improvement (LogEI) acquisition function for single-objective global
-        optimization. Improvement is with respect to the current "best" observation ``eta``, where
-        an improvement moves towards the objective function's minimum and the expectation is
-        calculated with respect to the ``model`` posterior. LogEI mitigates the issue of
-        Expected Improvement (EI) that it is numerically zero in many regions.
-        Although LogEI has (approximately) same optima as EI, it is much easier to optimze,
-        and empirically shows significantly improved optimization performance.
-        See :cite: `ament2023unexpected` for details.
-
-        :param model: The model of the objective function.
-        :param eta: The "best" observation.
-        :return: The expected improvement function. This function will raise
-            :exc:`ValueError` or :exc:`~tf.errors.InvalidArgumentError` if used with a batch size
-            greater than one.
-        """
         tf.debugging.assert_shapes(
             [(x, [..., 1, None])],
             message="This acquisition function only supports batch sizes of one.",
@@ -349,12 +351,13 @@ class AugmentedExpectedImprovement(SingleModelAcquisitionBuilder[SupportsGetObse
     optimization problems with high levels of observation noise.
     """
 
-    def __init__(self) -> None:
-        self._acq_function_cls = augmented_expected_improvement
-
     def __repr__(self) -> str:
         """"""
-        return "AugmentedExpectedImprovement()"
+        return f"{self.__class__.__name__}"
+
+    @property
+    def _acq_function_cls(self) -> Type[augmented_expected_improvement]:
+        return augmented_expected_improvement
 
     def prepare_acquisition_function(
         self,
@@ -415,7 +418,7 @@ class augmented_expected_improvement(AcquisitionFunctionClass):
         posterior predictive variance. Thus, when applying standard EI to noisy optimisation
         problems, AEI avoids getting trapped and repeatedly querying the same point.
         For model posterior :math:`f`, this is
-        .. math:: x \mapsto EI(x) * \left(1 - \frac{\tau^2}{\sqrt{s^2(x)+\tau^2}}\right),
+        .. math:: x \mapsto EI(x) * \left(1 - \frac{\tau}{\sqrt{s^2(x)+\tau^2}}\right),
         where :math:`s^2(x)` is the predictive variance and :math:`\tau` is observation noise.
         This function was introduced by Huang et al, 2006. See :cite:`Huang:2006` for details.
 
@@ -451,36 +454,42 @@ class augmented_expected_improvement(AcquisitionFunctionClass):
 
 class LogAugmentedExpectedImprovement(AugmentedExpectedImprovement):
     """
-    Builder for the augmented expected improvement function for optimization single-objective
-    optimization problems with high levels of observation noise.
+    Builder for the log augmented expected improvement function which applys log-trick similar to
+    :py:class`LogExpectedImprovement` to Augmented
+    Expected Improvment :py:class`AugmentedExpectedImprovement`.
     """
 
-    def __init__(self) -> None:
-        self._acq_function_cls = log_augmented_expected_improvement
-
-    def __repr__(self) -> str:
-        """"""
-        return "LogAugmentedExpectedImprovement()"
+    @property
+    def _acq_function_cls(self) -> Type[augmented_expected_improvement]:
+        return log_augmented_expected_improvement
 
 
 class log_augmented_expected_improvement(augmented_expected_improvement):
+    r"""
+    Return the logarithm of Augmented Expected Improvement (AEI) acquisition function
+    for single-objective global optimization under homoscedastic observation noise.
+    Improvement is with respect to the current "best" observation ``eta``, where an
+    improvement moves towards the objective function's minimum and the expectation is
+    calculated with respect to the ``model`` posterior.
+    This shares the same optima as original AEI but expected to be easier to optimize.
+
+    For model posterior :math:`f`, this is
+        .. math:: x \mapsto LogEI(x) + \log \left(1 - \frac{\tau}{\sqrt{s^2(x)+\tau^2}}\right),
+    It can be numeridcally unstable to take the log of the second term
+    since variance + noise_variance  can be numerically equal to noise_variance.
+    Hence, we use numerically stable version
+        .. math:: \log \left(1 - \frac{\tau}{\sqrt{s^2(x)+\tau^2}}\right) = \log
+        \frac{s^2(x)}{\sqrt{s^2(x)+\tau^2}(\sqrt{s^2(x)+\tau^2} + \tau(x))}
+
+    :param model: The model of the objective function.
+    :param eta: The "best" observation.
+    :return: The expected improvement function. This function will raise
+        :exc:`ValueError` or :exc:`~tf.errors.InvalidArgumentError` if used with a batch size
+        greater than one or a model without homoscedastic observation noise.
+    """
 
     @tf.function
     def __call__(self, x: TensorType) -> TensorType:
-        r"""
-        Return the logarithm of Augmented Expected Improvement (AEI) acquisition function
-        for single-objective global optimization under homoscedastic observation noise.
-        Improvement is with respect to the current "best" observation ``eta``, where an
-        improvement moves towards the objective function's minimum and the expectation is
-        calculated with respect to the ``model`` posterior.
-        This shares the same optima as original AEI but expected to be easier to optimize.
-
-
-        It can be problematic to take the log of original augmentaiton term in AEI
-        since variance + noise_variance  can be numerically equal to noise_variance.
-        Hence, we use numerically stable version
-        """
-
         tf.debugging.assert_shapes(
             [(x, [..., 1, None])],
             message="This acquisition function only supports batch sizes of one.",
@@ -488,7 +497,7 @@ class log_augmented_expected_improvement(augmented_expected_improvement):
 
         mean, variance = self._model.predict(tf.squeeze(x, -2))
         variance = ensure_positive(variance)
-        sigma = tf.sqrt(ensure_positive(variance))
+        sigma = tf.sqrt(variance)
         u = (self._eta - mean) / sigma
         logei = log_ei_helper(u) + tf.math.log(sigma)
 
