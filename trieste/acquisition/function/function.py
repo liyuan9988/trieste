@@ -353,7 +353,7 @@ class AugmentedExpectedImprovement(SingleModelAcquisitionBuilder[SupportsGetObse
 
     def __repr__(self) -> str:
         """"""
-        return f"{self.__class__.__name__}"
+        return f"{self.__class__.__name__}()"
 
     @property
     def _acq_function_cls(self) -> Type[augmented_expected_improvement]:
