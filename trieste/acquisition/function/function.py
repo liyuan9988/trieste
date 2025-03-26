@@ -472,14 +472,12 @@ class log_augmented_expected_improvement(augmented_expected_improvement):
     improvement moves towards the objective function's minimum and the expectation is
     calculated with respect to the ``model`` posterior.
     This shares the same optima as original AEI but expected to be easier to optimize.
-
     For model posterior :math:`f`, this is
-        .. math:: x \mapsto LogEI(x) + \log \left(1 - \frac{\tau}{\sqrt{s^2(x)+\tau^2}}\right),
+    .. math:: x \mapsto LogEI(x) + \log \left(1 - \frac{\tau}{\sqrt{s^2(x)+\tau^2}}\right),
     It can be numeridcally unstable to take the log of the second term
     since variance + noise_variance  can be numerically equal to noise_variance.
     Hence, we use numerically stable version
-        .. math:: \log \left(1 - \frac{\tau}{\sqrt{s^2(x)+\tau^2}}\right) = \log
-        \frac{s^2(x)}{\sqrt{s^2(x)+\tau^2}(\sqrt{s^2(x)+\tau^2} + \tau(x))}
+    .. math:: \log \left(1 - \frac{\tau}{\sqrt{s^2(x)+\tau^2}}\right) = \log\frac{s^2(x)}{\sqrt{s^2(x)+\tau^2}(\sqrt{s^2(x)+\tau^2} + \tau(x))} # noqa: E501
 
     :param model: The model of the objective function.
     :param eta: The "best" observation.
