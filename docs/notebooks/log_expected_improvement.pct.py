@@ -19,17 +19,9 @@
 #
 
 # %%
-import os
-
-os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
-
 import numpy as np
 import tensorflow as tf
 import trieste
-
-# silence TF warnings and info messages, only print errors
-# https://stackoverflow.com/questions/35911252/disable-tensorflow-debugging-information
-tf.get_logger().setLevel("ERROR")
 
 np.random.seed(1794)
 tf.random.set_seed(1794)
@@ -44,6 +36,7 @@ tf.random.set_seed(1794)
 # %%
 import matplotlib.pyplot as plt
 import gpflow
+from trieste.models.gpflow import GaussianProcessRegression, build_gpr
 
 ## Defining a problem
 def forrester_true(x):
@@ -58,13 +51,14 @@ search_space = trieste.space.Box([0.0], [1.])
 f_observer = trieste.objectives.utils.mk_observer(forrester_sim)
 
 ## Build gpflow model
+
 n = 5
 X = np.random.default_rng(12345).random((n, 1))
 data = f_observer(X)
-gpflow_m = trieste.models.gpflow.build_gpr(data, search_space)
+gpflow_m = build_gpr(data, search_space)
 optimiser = gpflow.optimizers.Scipy()
 optimiser.minimize(gpflow_m.training_loss, gpflow_m.trainable_variables)
-m = trieste.models.gpflow.GaussianProcessRegression(gpflow_m)
+m = GaussianProcessRegression(gpflow_m)
 
 ## Plot data and model prediction
 Xplot = np.linspace(0, 1.0, 100)[:, None]
@@ -85,8 +79,9 @@ plt.legend()
 # We can compute the original EI and logEI on this GP model. Note that we use different axis for each aquisition function in the for the ease of comparison.
 
 # %%
-acq_EI_func = trieste.acquisition.function.ExpectedImprovement().prepare_acquisition_function(m, data)
-acq_logEI_func = trieste.acquisition.function.LogExpectedImprovement().prepare_acquisition_function(m, data)
+from trieste.acquisition.function import ExpectedImprovement, LogExpectedImprovement
+acq_EI_func = ExpectedImprovement().prepare_acquisition_function(m, data)
+acq_logEI_func = function.LogExpectedImprovement().prepare_acquisition_function(m, data)
 
 
 X_grid = np.linspace(0.0, 1.0, 100)
@@ -123,7 +118,6 @@ plot_EI_and_logEI(X_grid, log_EI_val, EI_val)
 
 from trieste.experimental.plotting import plot_regret
 from trieste.acquisition.rule import EfficientGlobalOptimization
-from trieste.objectives import Ackley5
 
 ## Defining a SoS problem
 def SoS(x):
