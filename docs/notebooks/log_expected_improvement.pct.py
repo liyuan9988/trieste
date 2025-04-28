@@ -81,7 +81,7 @@ plt.legend()
 # %%
 from trieste.acquisition.function import ExpectedImprovement, LogExpectedImprovement
 acq_EI_func = ExpectedImprovement().prepare_acquisition_function(m, data)
-acq_logEI_func = function.LogExpectedImprovement().prepare_acquisition_function(m, data)
+acq_logEI_func = LogExpectedImprovement().prepare_acquisition_function(m, data)
 
 
 X_grid = np.linspace(0.0, 1.0, 100)
