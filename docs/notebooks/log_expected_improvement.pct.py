@@ -187,7 +187,7 @@ fig.tight_layout()
 
 
 # %% [markdown]
-# From the figure, we can tell that EI becomes unable to find better points after several observations even on this trivial problem, while logEI makes steady improvment throughout the process. A similar log-trick can be also applied to other EI family of acquisition functions including `LogAugmentedExpectedImprovement`.
+# From the figure, we can tell that EI becomes unable to find better points after several observations even on this trivial problem, while logEI makes steady improvement throughout the process. A similar log-trick can be also applied to other EI family of acquisition functions including `LogAugmentedExpectedImprovement`.
 
 # %% [markdown]
 # ## LICENSE
