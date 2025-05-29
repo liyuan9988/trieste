@@ -40,6 +40,8 @@ from .function import (
     ExpectedConstrainedImprovement,
     ExpectedImprovement,
     FastConstraintsFeasibility,
+    LogAugmentedExpectedImprovement,
+    LogExpectedImprovement,
     MakePositive,
     MonteCarloAugmentedExpectedImprovement,
     MonteCarloExpectedImprovement,
