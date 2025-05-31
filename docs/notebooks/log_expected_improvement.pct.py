@@ -135,7 +135,7 @@ def SoS(x):
 
 
 def benchmark_SoS(
-    search_space, observer, acq_qule_builder, initial_data, n_step, ax
+    search_space, observer, acq_rule_builder, initial_data, n_step, ax
 ):
 
     gpflow_model = trieste.models.gpflow.build_gpr(
@@ -146,7 +146,7 @@ def benchmark_SoS(
     )
 
     bo = trieste.bayesian_optimizer.BayesianOptimizer(observer, search_space)
-    acq_rule = EfficientGlobalOptimization(builder=acq_qule_builder)
+    acq_rule = EfficientGlobalOptimization(builder=acq_rule_builder)
     results = bo.optimize(
         n_step, initial_data, model, acquisition_rule=acq_rule
     )
