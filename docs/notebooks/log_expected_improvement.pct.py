@@ -79,7 +79,7 @@ plt.fill_between(
 plt.legend()
 
 # %% [markdown]
-# We can compute the original EI and logEI on this GP model. Note that we use different axis for each aquisition function in the for the ease of comparison.
+# We can compute the original EI and logEI on this GP model. Note that we use different axis for each aquisition function for the ease of comparison.
 
 # %%
 from trieste.acquisition.function import (
